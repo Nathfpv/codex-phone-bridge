@@ -44,7 +44,7 @@ def doctor():
 def main():
     os.umask(0o077)
     p=argparse.ArgumentParser(prog='codex-phone');s=p.add_subparsers(dest='cmd',required=True)
-    for name in ('start','stop','status','doctor','test-call','logs','config','serve'):s.add_parser(name)
+    for name in ('start','stop','status','doctor','register','test-call','logs','config','serve'):s.add_parser(name)
     l=s.add_parser('launch');l.add_argument('--cwd',required=True);l.add_argument('prompt')
     a=s.add_parser('resume');a.add_argument('thread')
     a=s.add_parser('answer');a.add_argument('id');a.add_argument('answer')
@@ -55,6 +55,15 @@ def main():
     try:
         if args.cmd=='config':configure();return
         if args.cmd=='doctor':doctor();return
+        if args.cmd=='register':
+            from .sip import Sip
+            async def register():
+                sip=Sip(config())
+                try:
+                    await sip.start()
+                    return await sip.wait_registered()
+                finally:await sip.close()
+            print(json.dumps(asyncio.run(register()),indent=2));return
         if args.cmd=='logs':
             path=home()/'events.jsonl';print(path.read_text()[-20000:] if path.exists() else 'No events');return
         if args.cmd=='serve':

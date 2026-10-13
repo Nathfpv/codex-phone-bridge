@@ -8,7 +8,8 @@ import time
 import unittest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 from codex_phone.storage import Store
-from codex_phone.sip import validate_uri,netstring
+from codex_phone.sip import Sip,validate_uri,netstring
+from types import SimpleNamespace
 from codex_phone.bridge import Bridge
 
 class Persistence(unittest.TestCase):
@@ -76,4 +77,24 @@ class Routing(unittest.IsolatedAsyncioTestCase):
         r=asyncio.StreamReader()
         for b in (b'7:',b'{"a":',b'1},'):r.feed_data(b)
         self.assertEqual(await netstring(r),{'a':1})
+
+class Registration(unittest.IsolatedAsyncioTestCase):
+    async def check(self, data):
+        # Contract fixture only: this does not register a real provider account.
+        sip=Sip.__new__(Sip)
+        sip.proc=SimpleNamespace(returncode=None)
+        sip.disconnected=asyncio.Event()
+        async def command(name):return {'data':data}
+        sip.command=command
+        return await sip.wait_registered(timeout=.01)
+    async def test_live_status_with_ansi(self):
+        result=await self.check('0 - sip:owner@provider.invalid   \x1b[32mOK \x1b[;m server.invalid:5061 Expires 600s')
+        self.assertEqual(result['status'],'REGISTERED')
+    async def test_username_ok_is_not_registration(self):
+        with self.assertRaises(RuntimeError):await self.check('0 - sip:OK_user@provider.invalid   zzz server.invalid')
+    async def test_rejection_redacts_raw_account(self):
+        with self.assertRaises(RuntimeError) as ctx:await self.check('0 - sip:private@provider.invalid ERR server.invalid')
+        self.assertNotIn('private',str(ctx.exception));self.assertNotIn('provider.invalid',str(ctx.exception))
+    async def test_expired_registration_is_not_success(self):
+        with self.assertRaises(RuntimeError):await self.check('0 - sip:owner@provider.invalid OK server.invalid Expires 0s')
 if __name__=='__main__':unittest.main()

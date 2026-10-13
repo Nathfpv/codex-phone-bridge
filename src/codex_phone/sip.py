@@ -151,17 +151,30 @@ video_display none
         return await asyncio.wait_for(loop(),timeout)
     async def dial(self, uri=None):
         if self.cfg:
-            for _ in range(100):
-                info=await self.command('reginfo')
-                if 'OK' in info.get('data',''):break
-                await asyncio.sleep(.2)
-            else:raise RuntimeError('SIP registration not confirmed')
+            await self.wait_registered()
         uri=uri or (self.cfg['iphone_uri'] if self.cfg else self.peer)
         if self.cfg:
             validate_uri(uri)
             if uri!=self.cfg['iphone_uri']:raise ValueError('Destination must match the configured owner')
         elif uri!=self.peer: raise ValueError('Local test peer mismatch')
         self.disconnected.clear();return await self.command('dial',uri)
+    async def wait_registered(self, timeout=20):
+        """Check provider registration without dialing or disclosing identities."""
+        deadline=asyncio.get_running_loop().time()+timeout
+        while asyncio.get_running_loop().time()<deadline:
+            info=await self.command('reginfo')
+            data=info.get('data','')
+            plain=re.sub(r'\x1b\[[0-9;]*m','',data)
+            # Match the actual status field with a live expiry, not a username
+            # containing "OK" or an expired previous registration.
+            if re.search(r'(?:^|\s)OK\s+\S+\s+Expires [1-9][0-9]*s\b',plain):
+                return {'status':'REGISTERED'}
+            if re.search(r'(?:^|\s)(?:FB-)?ERR(?:\s|$)',plain):
+                raise RuntimeError('SIP registration rejected; check account or provider status')
+            if self.proc.returncode is not None or self.disconnected.is_set():
+                raise RuntimeError('SIP control disconnected during registration')
+            await asyncio.sleep(.2)
+        raise RuntimeError('SIP registration not confirmed before timeout')
     async def hangup(self):
         if hasattr(self,'writer'):
             try: await self.command('hangup')

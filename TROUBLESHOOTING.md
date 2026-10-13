@@ -1,5 +1,7 @@
 # Troubleshooting
 
+`./bin/codex-phone register` verifies SIP registration without dialing and never prints
+raw account status. A returned REGISTERED state requires a live registration expiry.
 `./bin/codex-phone doctor` reports installed dependencies and configuration presence, not
 successful account registration or CallKit delivery. `status` reports queued questions,
 thread/turn states and pending local actions. `logs` contains sanitized transitions.

@@ -18,7 +18,10 @@
 5. Run `./bin/codex-phone config` in your local interactive terminal. Supply the two full
    `sip:username@sip.linphone.org` addresses and the Mac password with hidden input.
    Username/domain must be your own; no mobile telephone number is dialed.
-6. Run start and test-call while the iPhone is unlocked first. Take the call, listen to the
+6. Run `./bin/codex-phone register` first. It checks a live provider registration and
+   expiry without placing a call. Missing credentials, rejection and timeout are failures;
+   a reachable website or TLS handshake alone does not count as registration.
+7. Run start and test-call while the iPhone is unlocked first. Take the call, listen to the
    test question, speak a sentence, then say exactly “Antwort bestätigen” after read-back.
    Repeat with screen locked and Linphone in background, then mobile data if available.
    Record what caller/app text appears and whether both audio directions work. Do not

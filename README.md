@@ -25,6 +25,7 @@ Python 3.13 removes audioop and is currently unsupported.
 ./scripts/install.sh
 ./bin/codex-phone doctor
 ./bin/codex-phone config
+./bin/codex-phone register
 ./bin/codex-phone start
 ./bin/codex-phone test-call
 ./bin/codex-phone launch --cwd /absolute/path/to/task 'Implement the task; ask phone_decision for a required design decision.'
