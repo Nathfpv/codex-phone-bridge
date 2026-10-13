@@ -61,6 +61,13 @@ class Routing(unittest.IsolatedAsyncioTestCase):
     async def test_approval_never_enters_phone_queue(self):
         await self.b.request({'method':'item/permissions/requestApproval','id':4,'params':{'threadId':'thread','turnId':'turn','permissions':{'network':{'enabled':True}}}})
         self.assertEqual(self.b.store.pending(),[]);self.assertIn('4',self.b.approvals);self.assertEqual(self.sent,[])
+    async def test_concurrent_retries_are_bounded(self):
+        q=self.question()
+        results=await asyncio.gather(*(self.b.call(q) for _ in range(4)))
+        count=self.b.store.db.execute('SELECT COUNT(*) FROM calls WHERE question_id=?',(q['id'],)).fetchone()[0]
+        self.assertEqual(count,2)
+        self.assertEqual(sum(r.get('reason')=='retry_limit' for r in results),2)
+        self.assertEqual(self.b.store.pending()[0]['id'],q['id'])
     async def test_malformed_netstring(self):
         for data in (b'x:abc,',b'2:{};',b'2000000:'):
             r=asyncio.StreamReader();r.feed_data(data);r.feed_eof()
