@@ -118,7 +118,10 @@ class Bridge:
                 if sip:await sip.close()
     async def command(self,msg):
         op=msg.get('op')
-        if op=='status':return {'questions':[{'id':q['id'],'status':q['status'],'session_id':q['session_id'],'turn_id':q['turn_id']} for q in self.store.pending()], 'turns':self.turns,'approvals':[{'id':k,'method':v['method']} for k,v in self.approvals.items()]}
+        if op=='status':
+            calls=[dict(row) for row in self.store.db.execute('SELECT id,question_id,status,started,ended,error FROM calls ORDER BY started DESC LIMIT 10')]
+            active=next((c['status'] for c in calls if c['ended'] is None),'IDLE')
+            return {'call_state':active,'calls':calls,'questions':[{'id':q['id'],'status':q['status'],'session_id':q['session_id'],'turn_id':q['turn_id']} for q in self.store.pending()], 'turns':self.turns,'approvals':[{'id':k,'method':v['method']} for k,v in self.approvals.items()]}
         if op=='launch':
             result=await self.codex.launch(msg['cwd'],msg['prompt'])
             self.store.db.execute('INSERT INTO sessions VALUES (?,?)',(result['thread_id'],msg['cwd']));self.store.db.commit()
