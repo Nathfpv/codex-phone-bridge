@@ -85,7 +85,8 @@ def main():
             print(json.dumps(details,indent=2))
             if not sys.stdin.isatty() or input('Type the exact request ID to submit this local decision: ').strip()!=args.id:raise RuntimeError('Local confirmation missing')
             msg['decision']=args.decision
-        print(json.dumps(asyncio.run(request(msg)),indent=2))
+        result=asyncio.run(request(msg));print(json.dumps(result,indent=2))
+        if isinstance(result,dict) and result.get('status')=='FAILED':sys.exit(1)
         if args.cmd=='stop':
             for _ in range(60):
                 if not (home()/'control.sock').exists():return

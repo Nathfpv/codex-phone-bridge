@@ -9,7 +9,7 @@ from .codex import Codex
 
 class Bridge:
     def __init__(self):
-        self.store=Store();self.store.recover();self.lock=asyncio.Lock();self.questions={};self.approvals={};self.turns={};self.stopping=asyncio.Event();self.call_tasks=set();self.codex=None
+        self.store=Store();self.lock=asyncio.Lock();self.questions={};self.approvals={};self.turns={};self.stopping=asyncio.Event();self.call_tasks=set();self.codex=None
     def log(self,event,**fields):
         # No prompts, transcripts, SIP identities, protocol payloads or credentials.
         with (home()/'events.jsonl').open('a') as f:f.write(json.dumps({'time':time.time(),'event':event,**fields})+'\n')
@@ -175,6 +175,19 @@ class Bridge:
                     except RuntimeError:pass
                     self.log('decision_deadline',question=q['id'])
     async def run(self):
+        import fcntl
+        guard=(home()/'daemon.lock').open('a')
+        try:
+            fcntl.flock(guard,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except BlockingIOError:
+            guard.close();raise RuntimeError('Already running')
+        try:
+            self.store.recover()
+            await self.serve()
+        finally:
+            if self.codex and hasattr(self.codex,'proc') and self.codex.proc.returncode is None:await self.codex.close()
+            guard.close()
+    async def serve(self):
         import signal
         sock=home()/'control.sock'
         if sock.exists():
