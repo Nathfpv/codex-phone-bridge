@@ -46,7 +46,7 @@ def main():
     p=argparse.ArgumentParser(prog='codex-phone');s=p.add_subparsers(dest='cmd',required=True)
     for name in ('start','stop','status','doctor','register','test-call','logs','config','serve'):s.add_parser(name)
     l=s.add_parser('launch');l.add_argument('--cwd',required=True);l.add_argument('prompt')
-    a=s.add_parser('resume');a.add_argument('thread')
+    a=s.add_parser('resume');a.add_argument('thread');a.add_argument('--prompt')
     a=s.add_parser('answer');a.add_argument('id');a.add_argument('answer')
     a=s.add_parser('retry');a.add_argument('id')
     a=s.add_parser('approval');a.add_argument('id');a.add_argument('--decision',choices=['accept','decline','cancel'],required=True)
@@ -82,7 +82,9 @@ def main():
                 except RuntimeError:pass
             raise RuntimeError('Daemon failed; inspect private daemon.log')
         msg={'op':args.cmd}
-        if args.cmd=='resume':msg['thread']=args.thread
+        if args.cmd=='resume':
+            msg['thread']=args.thread
+            if args.prompt:msg['prompt']=args.prompt
         if args.cmd=='launch':
             cwd=Path(args.cwd).expanduser().resolve()
             if not cwd.is_dir():raise ValueError('Task directory missing')

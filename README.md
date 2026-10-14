@@ -40,7 +40,7 @@ On iPhone use the official Linphone account setup, allow microphone and notifica
 and verify registration. See [INSTALL.md](INSTALL.md).
 
 Additional real commands: `logs`, `answer QUESTION_ID TEXT`, `retry QUESTION_ID`,
-`resume THREAD_ID`, `inspect-approval REQUEST_ID`, and `approval REQUEST_ID --decision accept|decline|cancel`.
+`resume THREAD_ID [--prompt TEXT]`, `inspect-approval REQUEST_ID`, and `approval REQUEST_ID --decision accept|decline|cancel`.
 Security approvals require an interactive local terminal and are never answered by speech.
 `resume` explicitly resumes an owned thread after interruption/restart; it does not reuse a
 stale server request. Old questions stay as ORPHANED evidence and must be asked again.

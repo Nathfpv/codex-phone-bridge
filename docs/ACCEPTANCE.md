@@ -8,7 +8,7 @@ use a transport double and do not establish phone behavior.
 | --- | --- | --- |
 | T1 personal SIP registration | PASS | Real Mac provider registration returned 200 and REGISTERED with positive expiry. Owner reports iPhone app signed in; actual incoming call reached it. |
 | T2 real free SIP call to iPhone | PASS | Real SIP call reached owner iPhone; owner confirmed incoming call. No PSTN or paid voice API used. Audio is a separate failing gate. |
-| T3 locked-iPhone CallKit | BLOCKED_BY_USER | Device observation needed. Official support alone is insufficient. |
+| T3 locked-iPhone CallKit | PASS | Owner confirmed system incoming call on locked iPhone and complete audible question/read-back. Display-name/app-label details not recorded. |
 | T4 two-way participant audio | PASS | Owner confirmed complete real iPhone question and read-back; human speech reached local Whisper. Initial failures repaired with private SIPS/SRTP patches. |
 | T5 STT of SIP speech | PASS | Human speech received over real iPhone SIP stream, transcribed locally and confirmed during the call; linked to live request. |
 | T6 TTS heard by participant | PASS | Owner confirmed complete spoken question and read-back on iPhone after speaker activation. |

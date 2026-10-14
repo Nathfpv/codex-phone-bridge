@@ -127,11 +127,13 @@ class Bridge:
             self.store.db.execute('INSERT INTO sessions VALUES (?,?)',(result['thread_id'],msg['cwd']));self.store.db.commit()
             return result
         if op=='resume':
+            prompt=msg.get('prompt','Resume the same task. Earlier unresolved phone decisions are not authorized. Ask them again with phone_decision before acting.')
+            if not isinstance(prompt,str) or not 1<=len(prompt)<=10000:raise ValueError('Invalid continuation prompt')
             row=self.store.db.execute('SELECT cwd FROM sessions WHERE id=?',(msg['thread'],)).fetchone()
             if not row:raise RuntimeError('Only controller-owned threads may resume')
             if self.turns.get(msg['thread'],{}).get('status')=='inProgress':raise RuntimeError('Turn already running')
             await self.codex.rpc('thread/resume',{'threadId':msg['thread'],'cwd':row['cwd'],'sandbox':'workspace-write','approvalPolicy':'on-request'})
-            result=await self.codex.rpc('turn/start',{'threadId':msg['thread'],'input':[{'type':'text','text':'Resume the same task. Earlier unresolved phone decisions are not authorized. Ask them again with phone_decision before acting.'}]})
+            result=await self.codex.rpc('turn/start',{'threadId':msg['thread'],'input':[{'type':'text','text':prompt}]})
             return {'thread_id':msg['thread'],'turn_id':result['turn']['id']}
         if op=='answer':await self.deliver(msg['id'],msg['answer']);return {'status':'ANSWERED'}
         if op=='retry':
