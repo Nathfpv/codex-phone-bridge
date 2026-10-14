@@ -92,6 +92,9 @@ class Registration(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result['status'],'REGISTERED')
     async def test_username_ok_is_not_registration(self):
         with self.assertRaises(RuntimeError):await self.check('0 - sip:OK_user@provider.invalid   zzz server.invalid')
+    async def test_multiword_provider_status(self):
+        result=await self.check('0 - sip:owner@provider.invalid OK Flexisip/2.6 (sofia-sip-nta/2.0) Expires 600s')
+        self.assertEqual(result['status'],'REGISTERED')
     async def test_rejection_redacts_raw_account(self):
         with self.assertRaises(RuntimeError) as ctx:await self.check('0 - sip:private@provider.invalid ERR server.invalid')
         self.assertNotIn('private',str(ctx.exception));self.assertNotIn('provider.invalid',str(ctx.exception))

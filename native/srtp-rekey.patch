@@ -1,0 +1,12 @@
+--- a/srtp.c
++++ b/srtp.c
+@@ -393,6 +393,9 @@
+ 		mtx_lock(st->mtx_rx);
+ 		st->srtp_rx = mem_deref(st->srtp_rx);
+ 		mtx_unlock(st->mtx_rx);
++		mtx_lock(st->mtx_tx);
++		st->srtp_tx = mem_deref(st->srtp_tx);
++		mtx_unlock(st->mtx_tx);
+ 	}
+ 
+ 	st->crypto_suite = mem_deref(st->crypto_suite);

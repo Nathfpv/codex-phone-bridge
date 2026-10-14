@@ -46,6 +46,10 @@ class Sip:
         if not custom.exists(): raise RuntimeError('Build phoneaudio first')
         private_modules=self.dir/'modules';private_modules.mkdir(mode=0o700)
         for file in modules.glob('*.so'):(private_modules/file.name).symlink_to(file)
+        patched_srtp=ROOT/'.local/modules/srtp.so'
+        if patched_srtp.exists():
+            (private_modules/'srtp.so').unlink(missing_ok=True)
+            (private_modules/'srtp.so').symlink_to(patched_srtp)
         (private_modules/'phoneaudio.so').symlink_to(custom)
         (private_modules/'phonecontrol.so').symlink_to(ROOT/'.local/modules/phonecontrol.so')
         base=f'''poll_method kqueue
@@ -90,13 +94,17 @@ video_display none
             # IPv4 interface binding for outbound provider; media path uses ICE.
             base=base.replace(f'sip_listen 127.0.0.1:0','sip_listen 0.0.0.0:0')
             user=URI.fullmatch(self.cfg['mac_uri']).group(1)
-            account=f'"Codex Phone Bridge" <{self.cfg["mac_uri"]};auth_user={user};auth_pass="{pw}";outbound="sip:sip.linphone.org;transport=tls";regint=600;medianat=ice;stunserver=stun:stun.linphone.org;mediaenc=srtp-mand;answermode=manual\n'
+            account=f'"Codex Phone Bridge" <{self.cfg["mac_uri"]}>;auth_user={user};auth_pass="{pw}";outbound="sip:sip.linphone.org;transport=tls";regint=600;medianat=ice;stunserver=stun:stun.cloudflare.com:3478;mediaenc=srtp-mand;answermode=manual\n'
         else:
             account=f'<sip:bridge@127.0.0.1:{self.local_port}>;regint=0;answermode=manual\n'
         for name,content in [('config',base),('accounts',account)]:
             p=self.dir/name; p.write_text(content);p.chmod(0o600)
-        self.proc=await asyncio.create_subprocess_exec('baresip','-f',str(self.dir),stdin=asyncio.subprocess.DEVNULL,
-                        stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.STDOUT)
+        env=os.environ.copy()
+        private_re=ROOT/'.local/re-sips/build'
+        if (private_re/'libre.45.dylib').exists():
+            env['DYLD_LIBRARY_PATH']=str(private_re)
+        self.proc=await asyncio.create_subprocess_exec('baresip','-4','-f',str(self.dir),stdin=asyncio.subprocess.DEVNULL,
+                        stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.STDOUT,env=env)
         self.diagnostics=[];self.local_diagnostics=[]
         async def drain():
             while True:
@@ -167,7 +175,7 @@ video_display none
             plain=re.sub(r'\x1b\[[0-9;]*m','',data)
             # Match the actual status field with a live expiry, not a username
             # containing "OK" or an expired previous registration.
-            if re.search(r'(?:^|\s)OK\s+\S+\s+Expires [1-9][0-9]*s\b',plain):
+            if re.search(r'(?:^|\s)OK\s+[^\r\n]+?\s+Expires [1-9][0-9]*s\b',plain):
                 return {'status':'REGISTERED'}
             if re.search(r'(?:^|\s)(?:FB-)?ERR(?:\s|$)',plain):
                 raise RuntimeError('SIP registration rejected; check account or provider status')

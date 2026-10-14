@@ -27,3 +27,9 @@ describes server delivery of VoIP push, app re-registration, and iOS CallKit pre
 This supports the stack choice, not a claim that a particular locked iPhone has rung.
 [Privacy policy](https://www.linphone.org/en/privacy-policy/) documents metadata retention,
 including 12 months for activity logs, and hosting in France/Germany.
+
+## Live interoperability investigation (2026-10-14)
+
+- Cloudflare public STUN endpoint: https://developers.cloudflare.com/realtime/sfu/get-started/connection-patterns/ . Used only for NAT address discovery, not TURN, SFU, STT or TTS. Public availability is not a service guarantee.
+- Linphone STUN returned legacy mandatory attributes rejected by libre 4.12; public Cloudflare STUN allowed actual ringing.
+- libre 4.12 SIP request source rejects a SIPS route: https://github.com/baresip/re/blob/v4.12.0/src/sip/request.c . Provider supplied a SIPS Record-Route; isolated patch must preserve TLS and certificate verification.

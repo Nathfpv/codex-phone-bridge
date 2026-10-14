@@ -1,6 +1,6 @@
 # codex-phone-bridge
 
-**Experimental / PARTIAL. Real locked-iPhone CallKit and phone-to-Codex acceptance are not yet verified.**
+**Experimental / PARTIAL. Real phone-to-Codex continuation has been verified with an unlocked iPhone. Locked-iPhone CallKit remains unverified.**
 
 A local macOS bridge for product/design decisions during controller-owned Codex tasks:
 Codex asks a structured question, Baresip calls the owner's personal Linphone SIP account,
@@ -18,7 +18,7 @@ account, push registration and network. Do not infer a successful phone test fro
 
 Requirements: Apple Silicon macOS, Python 3.9–3.12, Xcode command-line tools,
 Homebrew, signed-in Codex CLI (tested: 0.162.0-alpha.17.2), Baresip 4.12.0,
-whisper.cpp 1.9.5, approximately 200 MB for the base model and bridge assets.
+whisper.cpp 1.9.5, CMake, and additional disk space for the model and isolated SIP dependency builds.
 Python 3.13 removes audioop and is currently unsupported.
 
 ```sh
@@ -50,8 +50,9 @@ stale server request. Old questions stay as ORPHANED evidence and must be asked 
 - Automated isolation/persistence/protocol tests execute with `python3 -m unittest discover -s tests -v`.
 - `python3 scripts/test-local-audio.py` uses two real Baresip processes, SIP signaling and RTP
   with TTS → PCM → RTP → decoded PCM → Whisper in both directions. It does **not** call an iPhone.
-- A real signed-in Codex task has waited for the dynamic decision tool and continued the same
-  thread/turn after a local text answer. This is **not** the phone acceptance test.
+- A real signed-in Codex task initiated an iPhone SIP call, received a spoken and read-back-confirmed
+  design decision through local Whisper, and created its demo in the original thread/turn. The owner
+  confirmed complete audible question/read-back, but the iPhone was unlocked; locked CallKit is still open.
 - See [docs/ACCEPTANCE.md](docs/ACCEPTANCE.md) for T1–T12; no overall E2E PASS is claimed.
 
 An arbitrary pre-existing Codex app/CLI thread is not automatically intercepted. Launch through

@@ -30,7 +30,13 @@ class Audio:
             return pcm
         finally: path.unlink(missing_ok=True);msg.unlink(missing_ok=True)
     async def play(self,pcm):
-        loop=asyncio.get_running_loop();begin=loop.time();self.sip.tx.connect(self.sip.tx_path)
+        loop=asyncio.get_running_loop()
+        deadline=loop.time()+10
+        while not Path(self.sip.tx_path).exists():
+            if self.sip.disconnected.is_set():raise RuntimeError('Call disconnected before media source ready')
+            if loop.time()>deadline:raise RuntimeError('SIP media source not ready')
+            await asyncio.sleep(.05)
+        begin=loop.time();self.sip.tx.connect(self.sip.tx_path)
         for i in range(0,len(pcm),640):
             frame=pcm[i:i+640].ljust(640,b'\0')
             deadline=loop.time()+1
