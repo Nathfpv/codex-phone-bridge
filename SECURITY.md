@@ -47,3 +47,10 @@ do not include live credentials or private transcripts in public issues.
 ## Experimental Linphone interoperability patches
 
 Installation builds libre 4.12.0 at pinned commit 65555dad439de9d6a81b3ee6092b9c096585249b in `.local/re-sips`. The patch accepts SIPS routes only over verified TLS and rejects insecure transport overrides. A private SRTP module resets both sender and receiver when the negotiated cipher changes. These builds are used only by bridge child processes; global Homebrew libraries remain intact. Upstream portions retain their BSD licenses in `native/RE-LICENSE.txt` and `native/BARESIP-LICENSE.txt`; own code remains MIT. STUN uses the public `stun.cloudflare.com:3478` address-discovery endpoint; no TURN credentials, relay purchase or paid telephone service is configured. STUN providers see public network address metadata.
+
+## Local MCP adapter
+
+See [agent integration](docs/AGENT-INTEGRATION.md) for the external-request trust
+boundary, cancellation, narrowly scoped tool approval and session-storage limits.
+The adapter returns decisions on the original invocation and exposes no approval,
+shell, credential, arbitrary-recipient or thread-resume tool.

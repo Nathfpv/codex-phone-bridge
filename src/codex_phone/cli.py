@@ -16,7 +16,9 @@ async def request(msg):
     except OSError:raise RuntimeError('Bridge is stopped. Run codex-phone start')
     w.write(json.dumps(msg).encode()+b'\n');await w.drain()
     try:
-        data=json.loads(await asyncio.wait_for(r.readline(),300))
+        line=await asyncio.wait_for(r.readline(),650)
+        if not line:raise RuntimeError('Bridge stopped before replying')
+        data=json.loads(line)
         if 'error' in data:raise RuntimeError(data['error'])
         return data['result']
     finally:w.close();await w.wait_closed()
