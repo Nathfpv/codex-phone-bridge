@@ -40,7 +40,7 @@ def doctor():
     report={'platform':sys.platform,'executables':{k:bool(shutil.which(k)) for k in ('codex','baresip','cc')},
        'audio_module':all((ROOT/'.local/modules'/name).exists() for name in ('phoneaudio.so','phonecontrol.so')),
        'cloud_sdk':(ROOT/'.local/voice-venv/bin/python').exists(),'local_transcription':'disabled for calls',
-       'control_socket':(home()/'control.sock').exists(),'callkit':'BLOCKED_BY_USER: requires real locked iPhone test'}
+       'control_socket':(home()/'control.sock').exists(),'callkit':'MANUAL_CHECK: see docs/CLOUD-ACCEPTANCE.md'}
     try:
         c=config();validate_uri(c['mac_uri']);validate_uri(c['iphone_uri']);report['config']='present (not registration proof)'
         report['voice_backend']=c.get('voice_backend','unconfigured')

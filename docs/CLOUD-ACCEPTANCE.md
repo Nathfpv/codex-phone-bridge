@@ -80,3 +80,19 @@ Setup changes: livekit-cli 2.19.0 and its PortAudio 19.7.0 dependency via Homebr
 private CLI project authorization and local cloud voice selection. Homebrew also
 automatically refreshed its taps during CLI installation; no full package upgrade
 was performed. No LaunchAgent or energy/security policy was changed.
+
+## Final repository/runtime checks
+
+The cloud installer was executed successfully against its locked 74-package
+environment. The 23 tests passed again from a clean committed source archive
+without runtime credentials; the archive was then removed. Staged source was
+compared against the actual configured credentials and private identities before
+publication: none were present. The public main branch was updated, and the
+service restarted on the current implementation without initiating another call.
+
+At final dashboard read, Build remained active and next invoice was $0.00.
+Credit balances were temporarily unavailable: exact remaining provider allowance
+is UNKNOWN. Local conservative reservations stand at 10 of 12 this month,
+including real cloud regression tests, leaving two calls before the local stop.
+No automatic reset or recharge was performed. This local reservation count is
+not the provider's charged usage.
