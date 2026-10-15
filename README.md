@@ -17,10 +17,11 @@ Linphone's free service is conditional on its current terms and has no service g
 The iOS app uses provider push and CallKit; actual lock-screen delivery depends on the device,
 account, push registration and network. Do not infer a successful phone test from a local test.
 
-## Use from Codex and Copilot CLI
+## Use from Codex and GitHub Copilot
 
 The shared local MCP adapter and personal decision policy can be registered for
-both clients. See [agent integration](docs/AGENT-INTEGRATION.md) for installation,
+Codex, Copilot CLI and the normal GitHub Copilot desktop app. The desktop app
+was verified Connected and executed the real status tool. See [agent integration](docs/AGENT-INTEGRATION.md) for installation,
 permissions, removal and exact test scope. Both installed agents reached the real
 daemon; new phone acceptance through MCP is blocked by the exhausted local cap.
 
