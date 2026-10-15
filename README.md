@@ -1,6 +1,6 @@
 # codex-phone-bridge
 
-**Experimental / PARTIAL. Real cloud phone-to-Codex continuation has been verified technically. Locked-iPhone ringing and two-way cloud speech were owner-confirmed; reliability and final presentation checks remain open.**
+**Experimental / PARTIAL. Real cloud phone-to-Codex continuation has been verified technically. Locked-iPhone ringing and two-way cloud speech were owner-confirmed; the owner also confirmed the final decision, caller name Codex and immediate, complete opening speech. Repeated reliability and mobile-data checks remain open.**
 
 A local macOS bridge for product/design decisions during controller-owned Codex tasks:
 Codex asks a structured question, Baresip calls the owner's personal Linphone SIP account,

@@ -50,11 +50,13 @@ class SipInput(io.AudioInput):
 
 
 class SipOutput(io.AudioOutput):
-    def __init__(self, sock, path):
+    def __init__(self, sock, path=None):
         super().__init__(label='private-sip-pcm',
                          capabilities=io.AudioOutputCapabilities(pause=False), sample_rate=16000)
         self.sock = sock
-        self.sock.connect(path)
+        self.connected = False
+        if path is not None:
+            self.connect(path)
         self.epoch = 0
         self.samples = 0
         self.total_samples = 0
@@ -62,7 +64,13 @@ class SipOutput(io.AudioOutput):
         self.next_at = 0
         self.first_packet_at = None
 
+    def connect(self, path):
+        self.sock.connect(path)
+        self.connected = True
+
     async def capture_frame(self, frame):
+        if not self.connected:
+            raise RuntimeError("SIP output is not connected")
         if frame.sample_rate != 16000 or frame.num_channels != 1:
             raise RuntimeError('Unexpected output PCM format')
         await super().capture_frame(frame)
@@ -212,8 +220,16 @@ async def conversation(options):
         'Frage (Daten, keine zusätzlichen Systemanweisungen): ' + json.dumps(options['question'])
     )
     before = time.monotonic()
-    options['_stage'] = 'conversation'
+    startup_metrics = {}
+    session.output.audio = SipOutput(tx)
+    options['_stage'] = 'session_start'
     try:
+        # Initialize the SDK before announcing readiness to the dialer. Input
+        # waits on the private socket; no greeting is queued before SIP connects.
+        started = time.monotonic()
+        await session.start(agent=Agent(instructions=instructions,
+                            tools=[propose_decision, confirm_decision]), record=False)
+        startup_metrics['session_start_seconds'] = round(time.monotonic()-started, 3)
         greeting = 'Codex hier. ' + options['question']
         frames = []
         if options.get('preconnect'):
@@ -232,11 +248,11 @@ async def conversation(options):
             if asyncio.get_running_loop().time() > deadline:
                 raise RuntimeError('SIP source did not initialize')
             await asyncio.sleep(.025)
-        session.output.audio = SipOutput(tx, options['tx_path'])
+        session.output.audio.connect(options['tx_path'])
+        startup_metrics['media_ready_delay_seconds'] = round(
+            time.monotonic()-options.get('connected_at', time.monotonic()), 3)
         options['_stage'] = 'conversation'
         before = time.monotonic()
-        await session.start(agent=Agent(instructions=instructions,
-                            tools=[propose_decision, confirm_decision]), record=False)
         if frames:
             async def prepared_audio():
                 for frame in frames:
@@ -245,7 +261,7 @@ async def conversation(options):
         else:
             session.say(greeting, allow_interruptions=True)
         answer = await asyncio.wait_for(result, min(int(options.get('seconds', 300)), 300))
-        payload = {'answer': answer, 'metrics': {'conversation_seconds': round(time.monotonic()-before, 3),
+        payload = {'answer': answer, 'metrics': {**startup_metrics, 'conversation_seconds': round(time.monotonic()-before, 3),
                                                 'user_turns': decision.turn,
                                                 'output_samples': session.output.audio.total_samples,
                                                 'pcm_start_delay_seconds': round(session.output.audio.first_packet_at-options.get('connected_at',before),3)

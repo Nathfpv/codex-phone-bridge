@@ -91,7 +91,8 @@ class Bridge:
                 transition('LISTENING')
                 answer,metrics=await converse(sip,q['question'],cfg,prepared=prepared)
                 self.log('voice_metrics',call=cid,**{k:v for k,v in metrics.items()
-                         if k in ('conversation_seconds','user_turns','output_samples','pcm_start_delay_seconds')
+                         if k in ('conversation_seconds','user_turns','output_samples','pcm_start_delay_seconds',
+                                  'session_start_seconds','media_ready_delay_seconds')
                          and isinstance(v,(int,float))})
                 if manual:self.store.set_question(q['id'],'TEST_COMPLETED')
                 else:await self.deliver(q['id'],answer,source='confirmed_cloud_sip_speech')
