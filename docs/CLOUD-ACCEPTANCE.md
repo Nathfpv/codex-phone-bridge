@@ -1,7 +1,10 @@
 # Cloud migration acceptance — PARTIAL
 
 Checked 2026-10-15. This document concerns the new cloud conversation backend,
-not historical Whisper/say device proofs. No complete cloud E2E success claimed.
+not historical Whisper/say device proofs. The owner has confirmed the core cloud
+E2E flow, including the final decision and locked-screen system ringing.
+The approximately five-second opening silence was reproduced in owner feedback;
+a subsequent startup change passed the real device comparison (see below).
 
 ## Executed evidence
 
@@ -38,15 +41,16 @@ not historical Whisper/say device proofs. No complete cloud E2E success claimed.
 | T5 SIP human speech → cloud STT | PASS, limited | Owner confirmed agent responses to speech; this implementation uses only cloud STT; transcript accuracy series outstanding |
 | T6 TTS heard in SIP call | PASS | Owner: voice audible on second real call |
 | T7 Codex question → new cloud call | PASS | A real coding task invoked its dynamic question and caused the iPhone call |
-| T8 Exact thread/turn decision | PASS, technical | Confirmed result delivered to the exact pending request in the resumed thread/turn; owner semantic check pending |
+| T8 Exact thread/turn decision | PASS | Confirmed result delivered to the exact pending request in the resumed thread/turn; owner confirmed the implemented decision is exactly right |
 | T9 Same task visibly continues | PASS | Same resumed turn created policy/decision/tests after receipt; two task tests independently rerun and passed |
 | T10 Missed/failed call persists | PASS, limited | Unit persistence checks and failure records; complete device decline series outstanding |
 | T11 Locked/mobile-data delivery | BLOCKED_BY_USER | New device series outstanding |
 | T12 Restart/secrets/ports/limits | PASS, limited | Local restart, private CLI store, no new public listener, reservation tests; full operational series outstanding |
 
-Next: one real controller-owned coding task is being tested with explicit
-read-back consent. Its result is not yet accepted. Do not replace the evidence
-above with provider claims, browser previews or offline fixtures.
+The owner accepted the implemented mobile/desktop decision and confirmed that
+this successful task call also rang on the locked iPhone through the iOS system
+display. Mobile-data delivery and repeated reliability remain untested. Do not
+replace device evidence with provider claims or offline fixtures.
 
 ## Owner feedback and subsequent fixes
 
@@ -58,7 +62,9 @@ positive user message after the saved proposal independently of a model tool
 call. The artificial two-minute cap was expanded to five minutes. A subsequent
 real local SIP/cloud regression passed. Caller name, direct opening and pre-dial
 preparation were then changed at the owner's request; the updated local SIP/cloud
-regression passed as well. Their new device outcome is still pending.
+regression passed as well. The owner has now confirmed the displayed caller name
+was Codex. The opening still had approximately five seconds of silence: FAIL.
+Preparing the greeting alone did not resolve that delay.
 
 The first coding turn ended with its dynamic phone tool failed after prolonged
 waiting. Its files remained unchanged. Recovery explicitly resumes the same
@@ -72,8 +78,10 @@ then completed the task. The isolated navigation policy now returns an expandabl
 menu on mobile and retains the desktop header from width 768 upward. Its two
 unittests were independently executed: PASS. Request state is ANSWERED, original
 thread identity is retained, and delivery turn equals that task's resumed turn.
-Owner confirmation of the final decision and latest caller/startup presentation
-is pending. This proof is not a production website change.
+The owner confirmed the final decision was exactly right, the caller name was
+Codex, and this same call arrived while locked through the system display.
+The later startup comparison was accepted as immediate and complete. This proof
+is not a production website change.
 
 Setup changes: livekit-cli 2.19.0 and its PortAudio 19.7.0 dependency via Homebrew;
 74 locked Python packages inside the project's optional Python 3.12 environment;
@@ -92,7 +100,29 @@ service restarted on the current implementation without initiating another call.
 
 At final dashboard read, Build remained active and next invoice was $0.00.
 Credit balances were temporarily unavailable: exact remaining provider allowance
-is UNKNOWN. Local conservative reservations stand at 10 of 12 this month,
-including real cloud regression tests, leaving two calls before the local stop.
+is UNKNOWN. At that dashboard read, local conservative reservations stood at 10 of 12 this
+month. The subsequent startup regression used an eleventh reservation. A final
+iPhone comparison uses the twelfth; the local cap then blocks further automatic
+calls this month. These reservations include failed calls and regression tests.
 No automatic reset or recharge was performed. This local reservation count is
 not the provider's charged usage.
+
+## Opening-delay investigation
+
+The owner reported approximately five seconds of silence on the otherwise
+successful locked-screen task call. Preparing the first spoken question alone
+was insufficient. Session startup now also occurs before the dialer receives
+readiness; output remains disconnected and no greeting is queued until SIP is
+connected. The offline test verifies that output refuses audio before connection.
+
+A subsequent actual local SIP/RTP/cloud conversation passed with a synthetic
+caller: 31.658 seconds, three user turns, 373760 bytes of audible return audio.
+SDK startup took 0.017 seconds before dialing, first outgoing PCM followed SIP
+connection by 0.002 seconds, and the peer received audible RTP after 0.134 seconds.
+These measurements do not establish the latency of iOS audio activation and do
+not prove that moving SDK startup resolves the owner's five-second pause.
+The subsequent real iPhone comparison was accepted by the owner: voice started
+immediately and the complete opening was audible. This is one successful device
+attempt, not a latency distribution or definitive proof of the original cause.
+The earlier successful task call remains the proof of decision delivery and task
+continuation; this final comparison specifically validates opening audio.

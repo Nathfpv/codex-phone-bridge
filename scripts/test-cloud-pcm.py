@@ -18,7 +18,14 @@ async def main():
         receiver.setblocking(False)
         sender = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         sender.setblocking(False)
-        output = SipOutput(sender, path)
+        output = SipOutput(sender)
+        try:
+            await output.capture_frame(rtc.AudioFrame(b"\0" * 640, 16000, 1, 320))
+        except RuntimeError:
+            pass
+        else:
+            raise AssertionError("Output must reject audio before SIP connection")
+        output.connect(path)
         source = SipInput(receiver)
         packet = b'\x01\x02' * 320
         await output.capture_frame(rtc.AudioFrame(packet, 16000, 1, 320))
