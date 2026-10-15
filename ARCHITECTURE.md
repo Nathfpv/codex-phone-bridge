@@ -1,5 +1,18 @@
 # Architecture
 
+## Current experimental cloud conversation path
+
+The pending original Codex RPC remains attached to the existing controller. A
+separate Python 3.12 worker uses LiveKit Agents custom audio IO directly over the
+private Baresip PCM sockets, without a WebRTC room or new public server. Cloud
+AssemblyAI STT → bounded Gemma dialogue → Fish TTS streams both directions.
+Local VAD detects speech only. A proposal needs a subsequent explicit spoken
+confirmation before the worker can return it. Original thread/turn/deadline
+checks remain in the controller. Local Whisper/say is disabled for calls.
+See [limits, setup and privacy](docs/CLOUD-VOICE.md).
+
+## Historical v1 path (not the current call backend)
+
 ```mermaid
 flowchart LR
     Task[Controller-owned Codex thread] -->|item/tool/call phone_decision| Controller[Local Python controller]

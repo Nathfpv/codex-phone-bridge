@@ -30,14 +30,21 @@ def configure():
     password=getpass.getpass('Mac SIP password (hidden): ')
     if not password or any(c in password for c in '\r\n"\\;'):raise ValueError('Unsupported account password characters')
     model=ROOT/'.local/ggml-base.bin'
-    private_json(home()/'config.json',{'mac_uri':mac,'iphone_uri':iphone,'password':password,'model':str(model),'quiet_hours':[]})
+    existing=config() if (home()/'config.json').exists() else {}
+    existing.update(mac_uri=mac,iphone_uri=iphone,password=password,model=str(model))
+    existing.setdefault('quiet_hours',[])
+    private_json(home()/'config.json',existing)
     print('Saved locally; no secret printed. Next: codex-phone start; codex-phone test-call')
 
 def doctor():
-    report={'platform':sys.platform,'executables':{k:bool(shutil.which(k)) for k in ('codex','baresip','whisper-cli','say','cc')},
-       'audio_module':all((ROOT/'.local/modules'/name).exists() for name in ('phoneaudio.so','phonecontrol.so')),'model':(ROOT/'.local/ggml-base.bin').exists(),
+    report={'platform':sys.platform,'executables':{k:bool(shutil.which(k)) for k in ('codex','baresip','cc')},
+       'audio_module':all((ROOT/'.local/modules'/name).exists() for name in ('phoneaudio.so','phonecontrol.so')),
+       'cloud_sdk':(ROOT/'.local/voice-venv/bin/python').exists(),'local_transcription':'disabled for calls',
        'control_socket':(home()/'control.sock').exists(),'callkit':'BLOCKED_BY_USER: requires real locked iPhone test'}
-    try:c=config();validate_uri(c['mac_uri']);validate_uri(c['iphone_uri']);report['config']='present (not registration proof)'
+    try:
+        c=config();validate_uri(c['mac_uri']);validate_uri(c['iphone_uri']);report['config']='present (not registration proof)'
+        report['voice_backend']=c.get('voice_backend','unconfigured')
+        report['free_plan_verified']=bool(c.get('cloud_voice',{}).get('free_plan_verified'))
     except Exception:report['config']='BLOCKED_BY_USER'
     print(json.dumps(report,indent=2))
 
@@ -45,6 +52,8 @@ def main():
     os.umask(0o077)
     p=argparse.ArgumentParser(prog='codex-phone');s=p.add_subparsers(dest='cmd',required=True)
     for name in ('start','stop','status','doctor','register','test-call','logs','config','serve'):s.add_parser(name)
+    a=s.add_parser('cloud-config');a.add_argument('--project-id',required=True);a.add_argument('--voice-id',required=True)
+    a.add_argument('--free-plan-verified',action='store_true',required=True)
     l=s.add_parser('launch');l.add_argument('--cwd',required=True);l.add_argument('prompt')
     a=s.add_parser('resume');a.add_argument('thread');a.add_argument('--prompt')
     a=s.add_parser('answer');a.add_argument('id');a.add_argument('answer')
@@ -54,6 +63,15 @@ def main():
     args=p.parse_args()
     try:
         if args.cmd=='config':configure();return
+        if args.cmd=='cloud-config':
+            import re
+            if not re.fullmatch(r'p_[a-z0-9]+',args.project_id) or not re.fullmatch(r'[a-f0-9]{32}',args.voice_id):
+                raise ValueError('Invalid project or Fish voice ID')
+            c=config();c['voice_backend']='livekit'
+            c['cloud_voice']={'project_id':args.project_id,'voice_id':args.voice_id,
+                              'free_plan_verified':True,'max_call_seconds':300}
+            private_json(home()/'config.json',c)
+            print('Cloud voice configured. Credentials remain in the private LiveKit CLI store.');return
         if args.cmd=='doctor':doctor();return
         if args.cmd=='register':
             from .sip import Sip
