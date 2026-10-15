@@ -1,8 +1,10 @@
 # Installation
 
-1. Inspect `./scripts/install.sh`. It builds two native modules, installs only missing
-   Baresip/Whisper formulae, and downloads a SHA-256-verified multilingual base model from
-   the upstream Whisper model repository. Homebrew may update transitive dependencies;
+The current conversation backend requires [cloud setup](docs/CLOUD-VOICE.md).
+Local Whisper is disabled for calls; older Whisper evidence is historical only.
+
+1. Inspect `./scripts/install.sh`. It builds the private native SIP components and installs only missing
+   Baresip/CMake formulae. It no longer installs Whisper or downloads a speech model. Homebrew may update transitive dependencies;
    no sudo, full Homebrew upgrade, shell profile change or LaunchAgent is used.
 2. Use an existing Codex CLI signed in with ChatGPT. `codex login status` should say ChatGPT;
    API-key-only authentication is rejected to avoid accidentally creating metered API costs.

@@ -57,7 +57,7 @@ net_interface {'en0' if self.cfg else '127.0.0.1'}
 sip_listen 127.0.0.1:{self.local_port or 0}
 call_max_calls 1
 call_local_timeout 45
-call_max_duration 180
+call_max_duration {360 if self.cfg else 180}
 sip_verify_server yes
 sip_cafile /etc/ssl/cert.pem
 audio_player phoneaudio,{self.rx_path}
@@ -94,7 +94,7 @@ video_display none
             # IPv4 interface binding for outbound provider; media path uses ICE.
             base=base.replace(f'sip_listen 127.0.0.1:0','sip_listen 0.0.0.0:0')
             user=URI.fullmatch(self.cfg['mac_uri']).group(1)
-            account=f'"Codex Phone Bridge" <{self.cfg["mac_uri"]}>;auth_user={user};auth_pass="{pw}";outbound="sip:sip.linphone.org;transport=tls";regint=600;medianat=ice;stunserver=stun:stun.cloudflare.com:3478;mediaenc=srtp-mand;answermode=manual\n'
+            account=f'"Codex" <{self.cfg["mac_uri"]}>;auth_user={user};auth_pass="{pw}";outbound="sip:sip.linphone.org;transport=tls";regint=600;medianat=ice;stunserver=stun:stun.cloudflare.com:3478;mediaenc=srtp-mand;answermode=manual\n'
         else:
             account=f'<sip:bridge@127.0.0.1:{self.local_port}>;regint=0;answermode=manual\n'
         for name,content in [('config',base),('accounts',account)]:

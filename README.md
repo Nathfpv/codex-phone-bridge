@@ -1,15 +1,18 @@
 # codex-phone-bridge
 
-**Experimental / PARTIAL. Real phone-to-Codex continuation has been verified with an unlocked iPhone. Locked-iPhone CallKit remains unverified.**
+**Experimental / PARTIAL. Real cloud phone-to-Codex continuation has been verified technically. Locked-iPhone ringing and two-way cloud speech were owner-confirmed; reliability and final presentation checks remain open.**
 
 A local macOS bridge for product/design decisions during controller-owned Codex tasks:
 Codex asks a structured question, Baresip calls the owner's personal Linphone SIP account,
-macOS synthesizes the question into the SIP stream, and local Whisper transcribes the reply.
+an experimental LiveKit backend streams SIP audio through cloud recognition, a separate
+conversation model, and Fish voice. Local transcription is disabled for calls.
 The owner must confirm the read-back before the answer is returned to the pending request
 in the same Codex thread and turn. An unanswered call leaves the question unresolved.
 
-This is SIP-to-SIP over the Internet. There is no PSTN, Twilio, paid voice API, cloud STT,
-or new phone number. Existing Internet/electricity and Codex plan usage still apply.
+This is SIP-to-SIP over the Internet without PSTN, Twilio or a new phone number.
+Cloud speech consumes provider free allowances; unlimited-free operation is not promised.
+No automatic paid fallback or recharge is implemented. Existing Internet/electricity
+and Codex plan usage still apply.
 Linphone's free service is conditional on its current terms and has no service guarantee.
 The iOS app uses provider push and CallKit; actual lock-screen delivery depends on the device,
 account, push registration and network. Do not infer a successful phone test from a local test.
@@ -18,8 +21,8 @@ account, push registration and network. Do not infer a successful phone test fro
 
 Requirements: Apple Silicon macOS, Python 3.9–3.12, Xcode command-line tools,
 Homebrew, signed-in Codex CLI (tested: 0.162.0-alpha.17.2), Baresip 4.12.0,
-whisper.cpp 1.9.5, CMake, and additional disk space for the model and isolated SIP dependency builds.
-Python 3.13 removes audioop and is currently unsupported.
+CMake, and isolated SIP dependency builds. The cloud worker uses a separate Python 3.12
+environment. Complete [cloud voice setup](docs/CLOUD-VOICE.md) before calling.
 
 ```sh
 ./scripts/install.sh
@@ -46,6 +49,12 @@ Security approvals require an interactive local terminal and are never answered 
 stale server request. Old questions stay as ORPHANED evidence and must be asked again.
 
 ## Verified scope
+
+The cloud migration has 23 passing safety/protocol tests plus real local SIP/cloud
+tests and a real iPhone decision delivered to the exact pending Codex request.
+That coding turn then implemented the isolated task; its two tests passed. See
+[cloud acceptance](docs/CLOUD-ACCEPTANCE.md) for current evidence and remaining limits.
+The Whisper-based items below are historical v1 evidence.
 
 - Automated isolation/persistence/protocol tests execute with `python3 -m unittest discover -s tests -v`.
 - `python3 scripts/test-local-audio.py` uses two real Baresip processes, SIP signaling and RTP

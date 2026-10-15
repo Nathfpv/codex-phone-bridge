@@ -1,8 +1,7 @@
 import asyncio
 import json
-import re
 import time
-from .audio import Audio
+from .cloud_audio import converse,prepare_voice
 from .sip import Sip
 from .storage import Store,config,home
 from .codex import Codex
@@ -63,7 +62,7 @@ class Bridge:
             if not manual:
                 count=self.store.db.execute('SELECT COUNT(*) FROM calls WHERE question_id=?',(q['id'],)).fetchone()[0]
                 if count>=2:return {'status':'FAILED','reason':'retry_limit'}
-            sip=None;cid=self.store.new_call(q['id']);state='DIALING';self.log('call_started',call=cid)
+            sip=None;prepared=None;cid=self.store.new_call(q['id']);state='DIALING';self.log('call_started',call=cid)
             def transition(s):
                 nonlocal state
                 state=s;self.store.call_state(cid,s);self.log('call_state',call=cid,status=s)
@@ -72,8 +71,11 @@ class Bridge:
                 hour=time.localtime().tm_hour
                 quiet=cfg.get('quiet_hours',[])
                 if hour in quiet:raise RuntimeError('Quiet hours; question remains pending')
+                if cfg.get('voice_backend') != 'livekit':
+                    raise RuntimeError('Cloud voice is not configured; local transcription is disabled')
                 if not manual and not self.questions.get(q['id'],{}).get('live'):raise RuntimeError('Question no longer live')
                 sip=Sip(cfg);await sip.start()
+                prepared=await prepare_voice(sip,q['question'],cfg)
                 await sip.dial()
                 ring_deadline=time.monotonic()+45
                 while True:
@@ -84,28 +86,16 @@ class Bridge:
                     if ev['type']!='CALL_ESTABLISHED':raise RuntimeError('Call not connected')
                     if ev.get('direction')!='outgoing' or ev.get('peeruri','').split(';')[0]!=cfg['iphone_uri']:raise RuntimeError('Call identity mismatch')
                     break
-                transition('CONNECTED');audio=Audio(sip,cfg.get('model'))
-                transition('SPEAKING');await audio.speak('Codex. Diese Antwort wird lokal transkribiert. '+q['question'])
-                answer=None
-                for attempt in range(2):
-                    try:
-                        transition('LISTENING');pcm=await audio.listen()
-                        transition('PROCESSING');text=await audio.transcribe(pcm)
-                        transition('CONFIRMING');await audio.speak('Ich habe verstanden: '+text+'. Sage genau: Antwort bestätigen. Oder sage: Wiederholen.')
-                        reply=await audio.transcribe(await audio.listen(timeout=15))
-                        normalized=re.sub(r'[^a-zäöüß ]','',reply.lower()).strip()
-                        if normalized in ('antwort bestätigen','antwort bestaetigen','confirm answer'):
-                            answer=text;break
-                        await audio.speak('Bitte wiederhole deine Antwort.')
-                    except RuntimeError:
-                        if attempt==1:raise
-                        await audio.speak('Die Antwort war unklar. Bitte wiederhole sie.')
-                if not answer:raise RuntimeError('No confirmed answer')
-                if sip.disconnected.is_set():raise RuntimeError('Call disconnected before confirmation delivery')
+                transition('CONNECTED')
+                prepared.options['connected_at']=time.monotonic()
+                transition('LISTENING')
+                answer,metrics=await converse(sip,q['question'],cfg,prepared=prepared)
+                self.log('voice_metrics',call=cid,**{k:v for k,v in metrics.items()
+                         if k in ('conversation_seconds','user_turns','output_samples','pcm_start_delay_seconds')
+                         and isinstance(v,(int,float))})
                 if manual:self.store.set_question(q['id'],'TEST_COMPLETED')
-                else:await self.deliver(q['id'],answer,source='confirmed_sip_speech')
-                await audio.speak('Danke. Die Antwort ist zugeordnet. Auf Wiederhören.')
-                transition('ENDING');return {'status':'ENDING','metrics':audio.metrics,'call_id':cid}
+                else:await self.deliver(q['id'],answer,source='confirmed_cloud_sip_speech')
+                transition('ENDING');return {'status':'ENDING','metrics':metrics,'call_id':cid}
             except asyncio.CancelledError:
                 self.store.call_state(cid,'FAILED','cancelled');raise
             except Exception as exc:
@@ -115,6 +105,7 @@ class Bridge:
                 self.log('call_failed',call=cid,error=type(exc).__name__)
                 return {'status':'FAILED','reason':str(exc) if isinstance(exc,(RuntimeError,ValueError)) else type(exc).__name__,'call_id':cid}
             finally:
+                if prepared:await prepared.close()
                 if sip:await sip.close()
     async def command(self,msg):
         op=msg.get('op')
