@@ -56,7 +56,7 @@ class Bridge:
             await self.codex.send({'id':e['rpc_id'],'result':{'contentItems':[{'type':'inputText','text':json.dumps({'decision':answer,'source':source})}],'success':True}})
         except BaseException:e['delivered']=False;raise
         e['live']=False;self.store.set_question(qid,'ANSWERED',answer);self.log('answer_delivered',question=qid,thread=e['thread'],turn=e['turn'])
-    async def call(self,q,manual=False):
+    async def call(self,q,manual=False,external=False):
         async with self.lock:
             if time.time()>q['deadline']:return {'status':'FAILED','reason':'deadline'}
             if not manual:
@@ -73,7 +73,7 @@ class Bridge:
                 if hour in quiet:raise RuntimeError('Quiet hours; question remains pending')
                 if cfg.get('voice_backend') != 'livekit':
                     raise RuntimeError('Cloud voice is not configured; local transcription is disabled')
-                if not manual and not self.questions.get(q['id'],{}).get('live'):raise RuntimeError('Question no longer live')
+                if not manual and not external and not self.questions.get(q['id'],{}).get('live'):raise RuntimeError('Question no longer live')
                 sip=Sip(cfg);await sip.start()
                 prepared=await prepare_voice(sip,q['question'],cfg)
                 await sip.dial()
@@ -95,10 +95,14 @@ class Bridge:
                                   'session_start_seconds','media_ready_delay_seconds')
                          and isinstance(v,(int,float))})
                 if manual:self.store.set_question(q['id'],'TEST_COMPLETED')
+                elif external:self.store.set_question(q['id'],'ANSWERED',answer)
                 else:await self.deliver(q['id'],answer,source='confirmed_cloud_sip_speech')
-                transition('ENDING');return {'status':'ENDING','metrics':metrics,'call_id':cid}
+                transition('ENDING');return dict(status='ENDING',metrics=metrics,call_id=cid,
+                                                       **({'decision':answer,'confirmed':True} if external else {}))
             except asyncio.CancelledError:
-                self.store.call_state(cid,'FAILED','cancelled');raise
+                self.store.call_state(cid,'FAILED','cancelled')
+                if external:self.store.set_question(q['id'],'ORPHANED')
+                raise
             except Exception as exc:
                 # Do not store exception payloads which may carry private config.
                 self.store.call_state(cid,'FAILED',type(exc).__name__);
@@ -134,6 +138,22 @@ class Bridge:
             count=self.store.db.execute('SELECT COUNT(*) FROM calls WHERE question_id=?',(q['id'],)).fetchone()[0]
             if count>=2:raise RuntimeError('Two-call retry limit reached')
             return await self.call(q)
+        if op=='phone-decision':
+            import uuid
+            if msg.get('kind') not in ('product','design') or not isinstance(msg.get('question'),str) or not 1<=len(msg['question'])<=2000:
+                raise ValueError('Only bounded product/design questions are accepted')
+            # Identity is generated locally, never supplied by the model. The
+            # answer returns on this connection, not through another agent API.
+            identity='mcp:'+str(uuid.uuid4())
+            q=self.store.add(identity,identity,identity,msg['question'],time.time()+600)
+            self.store.set_question(q['id'],'WAITING')
+            try:
+                result=await self.call(q,external=True)
+                if result.get('confirmed') is not True:self.store.set_question(q['id'],'ORPHANED')
+                return result
+            except asyncio.CancelledError:
+                self.store.set_question(q['id'],'ORPHANED')
+                raise
         if op=='test-call':
             q=self.store.add('manual-test','manual-test',str(time.time()),'Manueller Test. Sage einen kurzen Satz und bestätige danach die Antwort.',time.time()+180)
             return await self.call(q,manual=True)
@@ -155,8 +175,27 @@ class Bridge:
             line=await asyncio.wait_for(reader.readline(),5)
             if len(line)>65536:raise ValueError('Command too large')
             current=asyncio.current_task();self.call_tasks.add(current)
-            try:result=await self.command(json.loads(line))
-            finally:self.call_tasks.discard(current)
+            message=json.loads(line)
+            if message.get('op')=='stop':
+                # Write the acknowledgement in this task before shutdown can
+                # cancel active client tasks on the next event-loop iteration.
+                result=await self.command(message)
+                self.call_tasks.discard(current)
+            else:
+                operation=asyncio.create_task(self.command(message))
+                gone=asyncio.create_task(reader.read(1))
+                try:
+                    done,_=await asyncio.wait([operation,gone],return_when=asyncio.FIRST_COMPLETED)
+                    if operation not in done:
+                        operation.cancel()
+                        await asyncio.gather(operation,return_exceptions=True)
+                        return
+                    result=operation.result()
+                finally:
+                    for task in (operation,gone):
+                        if not task.done():task.cancel()
+                    await asyncio.gather(operation,gone,return_exceptions=True)
+                    self.call_tasks.discard(current)
             writer.write(json.dumps({'result':result}).encode()+b'\n')
         except Exception as exc:writer.write(json.dumps({'error':str(exc)}).encode()+b'\n')
         finally:
