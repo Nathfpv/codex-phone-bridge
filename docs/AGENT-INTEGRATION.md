@@ -1,4 +1,4 @@
-# Codex and Copilot CLI integration
+# Codex and GitHub Copilot integration
 
 This remains one standalone project/repository. No copy of the bridge is placed
 inside other development projects. The local stdio MCP executable exposes:
@@ -52,7 +52,12 @@ copilot --allow-tool='codex-phone(phone_status)' \
 There is no blanket shell/file permission grant or voice-based security approval.
 The bridge must already be running and the Mac awake. There is no new LaunchAgent.
 Remote/cloud-hosted agents cannot access this local stdio server automatically.
-This integration proves the installed Copilot CLI, not every Copilot IDE/client.
+The installed GitHub Copilot desktop app 1.1.29 also reads the shared Copilot
+configuration. Its Customize → Installed page shows codex-phone as Connected
+and enabled. An actual desktop chat invoked Phone Status and received the real
+daemon state. VS Code is installed but has no Copilot extension installed in the
+checked profile; no unrelated extension was installed. Browser/cloud Copilot and
+other IDE clients are not covered by this local desktop proof.
 
 ## Executed checks (2026-10-15)
 
@@ -65,6 +70,11 @@ This integration proves the installed Copilot CLI, not every Copilot IDE/client.
   decision. Its first attempt was blocked by tool approval before dispatch.
 - PASS: real installed Copilot CLI discovers and invokes both tools, receives the
   real local-limit failure and leaves the design decision unresolved.
+- PASS: normal GitHub Copilot desktop app 1.1.29 shows the server Connected
+  and enabled. A status-only prompt in the bridge project completed with one
+  actual tool, Codex Phone · Phone Status, returning IDLE, 12/12, can_call=false
+  and provider allowance UNKNOWN. No call, file edit or quota change occurred.
+  The project was opened in the app; repository-wide trust was skipped.
 - PASS: registration repeated without duplicate entries or unrelated value changes.
 - BLOCKED: new real Codex-MCP and Copilot-MCP phone → spoken confirmation →
   continuation tests. Local guard is already at 12/12; provider remaining free
