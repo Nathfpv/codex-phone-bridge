@@ -1,0 +1,40 @@
+diff --git a/src/sip/request.c b/src/sip/request.c
+index 7ff0fb4..548ff20 100644
+--- a/src/sip/request.c
++++ b/src/sip/request.c
+@@ -651,7 +651,8 @@ static int sip_request_alloc(struct sip_request **reqp,
+ 	if (!sip || !met || !uri || !route || !mb)
+ 		return EINVAL;
+ 
+-	if (pl_strcasecmp(&route->scheme, "sip"))
++	if (pl_strcasecmp(&route->scheme, "sip") &&
++	    pl_strcasecmp(&route->scheme, "sips"))
+ 		return ENOSYS;
+ 
+ 	req = mem_zalloc(sizeof(*req), destructor);
+@@ -683,7 +684,24 @@ static int sip_request_alloc(struct sip_request **reqp,
+ 	req->resph = resph;
+ 	req->arg   = arg;
+ 
+-	if (tp != SIP_TRANSP_NONE) {
++	if (!pl_strcasecmp(&route->scheme, "sips")) {
++		if (tp != SIP_TRANSP_NONE && tp != SIP_TRANSP_TLS) {
++			err = EPROTONOSUPPORT;
++			goto out;
++		}
++		if (!msg_param_decode(&route->params, "transport", &pl) &&
++		    pl_strcasecmp(&pl, "tls") && pl_strcasecmp(&pl, "tcp")) {
++			err = EPROTONOSUPPORT;
++			goto out;
++		}
++		if (!sip_transp_supported(sip, SIP_TRANSP_TLS, AF_UNSPEC)) {
++			err = EPROTONOSUPPORT;
++			goto out;
++		}
++		req->tp = SIP_TRANSP_TLS;
++		req->tp_selected = true;
++	}
++	else if (tp != SIP_TRANSP_NONE) {
+ 		req->tp = tp;
+ 	}
+ 	else if (!msg_param_decode(&route->params, "transport", &pl)) {
