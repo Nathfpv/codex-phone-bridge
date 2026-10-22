@@ -13,6 +13,69 @@ from codex_phone.bridge import Bridge
 from codex_phone.storage import Store
 
 class Decisions(unittest.IsolatedAsyncioTestCase):
+    async def test_disconnect_after_send_never_starts_or_replays(self):
+        from codex_phone.mcp_server import daemon
+        messages=[]
+        async def close_after_request(reader,writer):
+            messages.append(json.loads(await reader.readline()))
+            writer.close();await writer.wait_closed()
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ,CODEX_PHONE_HOME=directory):
+            server=await asyncio.start_unix_server(close_after_request,str(Path(directory)/'control.sock'))
+            try:
+                with patch('asyncio.create_subprocess_exec',AsyncMock()) as spawn:
+                    with self.assertRaisesRegex(RuntimeError,'stopped before'):
+                        await daemon({'op':'phone-decision','kind':'design','question':'Option A?'})
+                    spawn.assert_not_awaited()
+                self.assertEqual(len(messages),1)
+            finally:
+                server.close();await server.wait_closed()
+
+    async def test_missing_configuration_never_advertises_call_readiness(self):
+        from codex_phone.readiness import call_readiness
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ,CODEX_PHONE_HOME=directory):
+            status=call_readiness({},'IDLE')
+            self.assertTrue(status['budget_allows_call'])
+            self.assertFalse(status['can_call'])
+            self.assertFalse(status['readiness_checks']['sip_configuration'])
+
+    async def test_missing_service_recovers_before_sending_request(self):
+        from codex_phone.mcp_server import daemon
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            servers=[]; messages=[]
+            async def respond(reader,writer):
+                messages.append(json.loads(await reader.readline()))
+                writer.write(b'{"result":{"call_state":"IDLE"}}\n')
+                await writer.drain();writer.close();await writer.wait_closed()
+            async def start(*args,**kwargs):
+                servers.append(await asyncio.start_unix_server(respond,str(Path(directory)/'control.sock')))
+                return SimpleNamespace(wait=AsyncMock(return_value=0),returncode=0)
+            with patch.dict(os.environ,CODEX_PHONE_HOME=directory), patch('asyncio.create_subprocess_exec',side_effect=start):
+                try:
+                    self.assertEqual(await daemon({'op':'status'}),{'call_state':'IDLE'})
+                    self.assertEqual(messages,[{'op':'status'}])
+                finally:
+                    for server in servers:
+                        server.close();await server.wait_closed()
+
+    async def test_cancelled_start_is_reaped_without_sending(self):
+        from codex_phone.mcp_server import daemon
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        started=asyncio.Event(); calls=[]
+        async def wait():
+            calls.append(True)
+            if len(calls)==1:
+                started.set();await asyncio.Future()
+            return 0
+        proc=SimpleNamespace(wait=wait,returncode=None,kill=Mock())
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ,CODEX_PHONE_HOME=directory), patch('asyncio.create_subprocess_exec',AsyncMock(return_value=proc)):
+            task=asyncio.create_task(daemon({'op':'status'}))
+            await asyncio.wait_for(started.wait(),2)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):await task
+        proc.kill.assert_called_once();self.assertEqual(len(calls),2)
+
     async def test_failure_never_becomes_decision(self):
         with patch('codex_phone.mcp_server.daemon',AsyncMock(return_value={'status':'FAILED','reason':'limit'})):
             value=await tool('phone_decision',{'kind':'design','question':'Which layout?'})

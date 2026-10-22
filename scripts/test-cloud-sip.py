@@ -13,6 +13,9 @@ import os
 import socket
 import sys
 import time
+import tempfile
+from contextlib import ExitStack
+from unittest.mock import patch
 from pathlib import Path
 import aiohttp
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
@@ -21,6 +24,8 @@ from livekit.agents import inference, APIConnectOptions
 from codex_phone.sip import Sip
 from codex_phone.cloud_voice import credentials, SipOutput, conversation
 from codex_phone.cloud_audio import converse, prepare_voice
+from codex_phone.storage import config
+from codex_phone.bridge import Bridge
 
 
 def port():
@@ -62,23 +67,57 @@ async def main(args):
     task = None
     prepared = None
     question = "Soll die mobile Navigation vereinfacht werden und Desktop unverändert bleiben?"
+    installed = config()
     cfg = {"cloud_voice": {"project_id": args.project, "voice_id": args.voice,
-                            "free_plan_verified": True, "max_call_seconds": 70}}
+                            "free_plan_verified": True, "max_call_seconds": 100},
+           "dialogue_backend": installed.get('dialogue_backend', 'livekit'),
+           "recognition_backend": installed.get('recognition_backend', 'livekit'),
+           "provider_plan_evidence": installed.get('provider_plan_evidence', {})}
     drain_task = None
+    mcp = None
+    server = None
+    bridge = None
+    isolation = ExitStack()
     try:
-        await a.start()
         await b.start()
-        prepared = await prepare_voice(a, question, cfg)
-        await a.dial()
-        incoming = await b.event({'CALL_INCOMING', 'CALL_CLOSED'}, 10)
+        if args.mcp:
+            directory = isolation.enter_context(tempfile.TemporaryDirectory(prefix='cpb-mcp-sip-'))
+            isolation.enter_context(patch.dict(os.environ, CODEX_PHONE_HOME=directory))
+            # Only the SIP transport boundary is redirected to an actual local
+            # synthetic peer. No personal account or destination is loaded.
+            cfg.update(voice_backend='livekit', iphone_uri=f'sip:bridge@127.0.0.1:{b_port}')
+            isolation.enter_context(patch('codex_phone.bridge.config', return_value=cfg))
+            isolation.enter_context(patch('codex_phone.bridge.Sip', return_value=a))
+            bridge = Bridge()
+            server = await asyncio.start_unix_server(bridge.client, str(Path(directory)/'control.sock'))
+            mcp = await asyncio.create_subprocess_exec(sys.executable, '-B',
+                str(Path(__file__).resolve().parents[1]/'bin/codex-phone-mcp'),
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
+            async def invoke():
+                request={'jsonrpc':'2.0','id':42,'method':'tools/call',
+                         'params':{'name':'phone_decision','arguments':{'kind':'design','question':question}}}
+                mcp.stdin.write(json.dumps(request).encode()+b'\n'); await mcp.stdin.drain()
+                response=json.loads(await mcp.stdout.readline())
+                assert response['id']==42, 'Response reached wrong invocation'
+                payload=json.loads(response['result']['content'][0]['text'])
+                assert payload.get('confirmed') is True, 'No confirmed MCP decision'
+                return payload['decision'], {}
+            task=asyncio.create_task(invoke())
+        else:
+            await a.start()
+            prepared = await prepare_voice(a, question, cfg)
+            await a.dial()
+        incoming = await b.event({'CALL_INCOMING', 'CALL_CLOSED'}, 50)
         assert incoming['type'] == 'CALL_INCOMING'
         await b.command('accept')
-        connected = await a.event({'CALL_ESTABLISHED', 'CALL_CLOSED'}, 15)
+        connected = await (b if args.mcp else a).event({'CALL_ESTABLISHED', 'CALL_CLOSED'}, 15)
         assert connected['type'] == 'CALL_ESTABLISHED'
         connected_at = time.monotonic()
-        prepared.options["connected_at"] = connected_at
+        if prepared:
+            prepared.options["connected_at"] = connected_at
         drain_task = asyncio.create_task(drain())
-        task = asyncio.create_task(converse(a, question, cfg, prepared=prepared))
+        if not args.mcp:
+            task = asyncio.create_task(converse(a, question, cfg, prepared=prepared))
         await asyncio.sleep(12)
         await say('Bitte vereinfache die mobile Navigation und lass Desktop unverändert.')
         await asyncio.sleep(12)
@@ -91,7 +130,11 @@ async def main(args):
         answer = answer.lower()
         assert 'mobil' in answer and 'desktop' in answer, 'Decision content mismatch'
         assert received > 32000, 'No actual return RTP audio'
-        print(json.dumps({'status': 'PASS', 'scope': 'synthetic caller, real local SIP/RTP and cloud',
+        if bridge:
+            row=bridge.store.db.execute('SELECT status FROM questions').fetchone()
+            assert row[0]=='ANSWERED', 'Confirmed decision was not persisted'
+            assert len(bridge.store.db.execute('SELECT id FROM calls').fetchall())==1, 'Duplicate call'
+        print(json.dumps({'status': 'PASS', 'scope': 'real MCP + controller + local SIP/RTP + cloud' if args.mcp else 'synthetic caller, real local SIP/RTP and cloud',
                           'received_audio_bytes': received, 'metrics': metrics,
                           'first_audible_rtp_seconds': round(first_audible_at-connected_at, 3),
                           'iphone': 'NOT_TESTED'}))
@@ -102,8 +145,20 @@ async def main(args):
         await asyncio.gather(*(t for t in (task, drain_task) if t), return_exceptions=True)
         if prepared:
             await prepared.close()
-        await a.close()
+        if mcp:
+            mcp.stdin.close()
+            try: await asyncio.wait_for(mcp.wait(), 5)
+            except asyncio.TimeoutError: mcp.kill(); await mcp.wait()
+        if server:
+            server.close(); await server.wait_closed()
+        if bridge:
+            for pending in list(bridge.call_tasks): pending.cancel()
+            await asyncio.gather(*bridge.call_tasks, return_exceptions=True)
+            bridge.store.db.close()
+        if a.dir.exists():
+            await a.close()
         await b.close()
+        isolation.close()
 
 
 if __name__ == '__main__':
@@ -111,5 +166,6 @@ if __name__ == '__main__':
     parser.add_argument('--project', required=True)
     parser.add_argument('--voice', default='fa4c9eb3dccc4806b382b40d61c6b10a')
     parser.add_argument('--use-free-allowance', required=True, action='store_true')
+    parser.add_argument('--mcp', action='store_true', help='Include a real stdio MCP client and controller; calls ONLY a synthetic loopback SIP peer')
     logging.basicConfig(level=logging.WARNING)
     asyncio.run(main(parser.parse_args()))

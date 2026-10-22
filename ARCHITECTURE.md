@@ -4,8 +4,10 @@
 
 The pending original Codex RPC remains attached to the existing controller. A
 separate Python 3.12 worker uses LiveKit Agents custom audio IO directly over the
-private Baresip PCM sockets, without a WebRTC room or new public server. Cloud
-AssemblyAI STT → bounded Gemma dialogue → Fish TTS streams both directions.
+private Baresip PCM sockets, without a WebRTC room or new public server. The installed profile uses
+Groq Whisper → MAFFEO GPT-OSS120B via loopback router → existing LiveKit Fish TTS.
+AssemblyAI/Gemma remain explicit rollback selections. See
+[executed integration evidence](docs/INTEGRATION-2026-10-22.md).
 Local VAD detects speech only. A proposal needs a subsequent explicit spoken
 confirmation before the worker can return it. Original thread/turn/deadline
 checks remain in the controller. Local Whisper/say is disabled for calls.

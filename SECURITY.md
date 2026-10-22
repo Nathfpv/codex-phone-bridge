@@ -21,7 +21,9 @@ Codex sessions. This is experimental software, not a safety-critical approval sy
 - SQLite retains questions and confirmed answers so no decisions disappear. These contain private
   task context. Codex also persists its own thread history. Model computation uses the existing
   Codex plan; the confirmed answer is sent to Codex and is not fully local.
-- Production audio streams to LiveKit Inference and selected cloud STT/LLM/TTS providers.
+- Current production audio is recognized by Groq Whisper using the existing owner-only credential;
+  dialogue goes through the loopback MAFFEO router (Groq/Cloudflare same-model routes),
+  and voice synthesis goes through existing LiveKit Fish.
   Only the open question and conversation are supplied, not an automatic repository upload.
   SDK recording/observability is disabled; this is not a blanket zero-retention guarantee.
   Credentials remain in the private LiveKit CLI store; local caps do not guarantee provider bills.

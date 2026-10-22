@@ -34,3 +34,30 @@ Private `.local/runtime/daemon.log` contains daemon startup diagnostics; do not 
 Reproduce local SIP/RTP speech: `python3 scripts/test-local-audio.py`.
 Run deterministic safety tests: `python3 -m unittest discover -s tests -v`.
 Stop: `./bin/codex-phone stop`; uninstall artifacts: `./scripts/uninstall.sh`.
+
+## MCP recovery after a stopped daemon
+
+A new MCP adapter now starts the daemon on demand when its control socket is
+missing or refuses the connection. Startup is bounded to ten seconds and uses
+the existing singleton daemon lock. Recovery occurs only before sending the
+request; a disconnect after sending never replays a call. Restart existing MCP
+sessions to load adapter changes. This does not reset the local monthly budget.
+
+Verified 2026-10-22: the regression reproduced FileNotFoundError before the fix;
+31 offline tests passed afterward. A fresh real stdio MCP status request after
+stopping the production daemon restarted it and returned IDLE. Its budget was
+12/12, can_call=false; no human phone acceptance was performed.
+
+## Distinguish quota, readiness and old MCP processes
+
+`phone_status` now separates `budget_allows_call`, individual `readiness_checks`,
+and combined `can_call`. This is preflight eligibility, not proof of current
+provider connectivity or phone ringing. `provider_remaining_allowance` remains
+UNKNOWN unless an actual account source provides it. The local reservation count
+is never subtracted from provider credits. A stale/mismatched Build-plan observation
+cannot waive the legacy guard. Recheck the actual dashboard to renew it.
+
+If an already-running chat still reports a fixed cap of 12 while a fresh executable
+reports the new profile, it has an old imported MCP adapter. Reconnect that MCP
+server/session. Do not erase the database or terminate unrelated agent sessions.
+Expired pending questions become EXPIRED on daemon recovery; stored answers remain.

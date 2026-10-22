@@ -1,3 +1,29 @@
+# Current MAFFEO voice profile — 2026-10-22
+
+Runtime selection: `dialogue_backend=maffeo`, `recognition_backend=groq`.
+Dialogue uses the existing loopback MAFFEO Chat Completions endpoint, exact model
+`gpt-oss-120b`, low reasoning and a 512-token completion bound. Groq Whisper uses
+only the existing owner-only `~/.groq-key`; it is never copied into bridge config.
+LiveKit Fish remains the voice provider. The prior model paths remain explicit
+rollback options, not automatic cross-provider/model fallbacks.
+
+A dashboard-verified Build plan has a provider-enforced hard cap. Its project-bound
+observation is valid for seven days. Old local reservations remain an audit trail;
+a fresh verified profile has no 12-attempt local cap. Unknown balance is not zero
+and not unlimited. Never upgrade, reset history or enable paid fallback to fix a
+quota error. Groq phone and chat requests share the existing account limits.
+
+The controller reads back the saved proposal itself, checks successful non-silent
+uninterrupted audio playout, then requires a new explicit confirmation. A failed
+or interrupted readback cannot enable consent. SDK meter observations (audio
+seconds, input/output tokens, TTS characters) are saved during the session, including
+before failures. They are not invoices or exact remaining shared-project credit.
+The final session snapshot is marked closed only after graceful shutdown; a hard
+kill can leave partial observations. No additional text/audio recording is made.
+
+The following sections document the original backend and its setup. Current
+executed evidence and remaining device gates: [integration record](INTEGRATION-2026-10-22.md).
+
 # Experimental cloud conversation backend
 
 The SIP controller keeps the pending original Codex request. A separate, bounded
