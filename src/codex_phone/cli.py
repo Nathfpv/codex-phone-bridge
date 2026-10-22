@@ -45,6 +45,10 @@ def doctor():
        'control_socket':(home()/'control.sock').exists(),'callkit':'MANUAL_CHECK: see docs/CLOUD-ACCEPTANCE.md'}
     try:
         c=config();validate_uri(c['mac_uri']);validate_uri(c['iphone_uri']);report['config']='present (not registration proof)'
+        from .readiness import call_readiness
+        try: state=asyncio.run(request({'op':'status'}))['call_state']
+        except RuntimeError: state='STOPPED'
+        report['preflight']=call_readiness(c, state)
         report['voice_backend']=c.get('voice_backend','unconfigured')
         report['free_plan_verified']=bool(c.get('cloud_voice',{}).get('free_plan_verified'))
     except Exception:report['config']='BLOCKED_BY_USER'

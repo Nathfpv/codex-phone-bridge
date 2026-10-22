@@ -3,7 +3,7 @@
 This remains one standalone project/repository. No copy of the bridge is placed
 inside other development projects. The local stdio MCP executable exposes:
 
-- `phone_status`: bridge state and the conservative local monthly call count.
+- `phone_status`: bridge state, separate budget eligibility, explicit preflight checks and UNKNOWN provider balance.
 - `phone_decision(kind, question)`: one bounded product/design decision. Include
   options/context directly in the question, at most 2000 characters.
 
@@ -50,7 +50,7 @@ copilot --allow-tool='codex-phone(phone_status)' \
 ```
 
 There is no blanket shell/file permission grant or voice-based security approval.
-The bridge must already be running and the Mac awake. There is no new LaunchAgent.
+Fresh MCP adapters start a missing daemon before sending a request. The Mac must be awake. There is no new LaunchAgent. Existing imported adapters require reconnection to load code changes.
 Remote/cloud-hosted agents cannot access this local stdio server automatically.
 The installed GitHub Copilot desktop app 1.1.29 also reads the shared Copilot
 configuration. Its Customize → Installed page shows codex-phone as Connected

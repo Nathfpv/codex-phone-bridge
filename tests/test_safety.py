@@ -22,6 +22,14 @@ class Persistence(unittest.TestCase):
         self.store.set_question(q['id'],'WAITING');cid=self.store.new_call(q['id']);self.store.recover()
         self.assertEqual(self.store.pending()[0]['status'],'ORPHANED')
         self.assertEqual(self.store.db.execute('SELECT status FROM calls WHERE id=?',(cid,)).fetchone()[0],'FAILED')
+    def test_recovery_expires_old_requests_without_deleting_answers(self):
+        old=self.store.add('old','turn','request','Expired',time.time()-1)
+        answered=self.store.add('done','turn','request','Answered',time.time()-1)
+        self.store.set_question(answered['id'],'ANSWERED','Option A')
+        self.store.recover()
+        self.assertEqual(self.store.pending(),[])
+        self.assertEqual(self.store.db.execute('SELECT status FROM questions WHERE id=?',(old['id'],)).fetchone()[0],'EXPIRED')
+        self.assertEqual(self.store.db.execute('SELECT answer FROM questions WHERE id=?',(answered['id'],)).fetchone()[0],'Option A')
     def test_parallel_thread_isolation(self):
         a=self.store.add('thread-a','turn','request','A',time.time()+60)
         b=self.store.add('thread-b','turn','request','B',time.time()+60)

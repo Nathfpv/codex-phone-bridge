@@ -17,13 +17,36 @@ Linphone's free service is conditional on its current terms and has no service g
 The iOS app uses provider push and CallKit; actual lock-screen delivery depends on the device,
 account, push registration and network. Do not infer a successful phone test from a local test.
 
+## Current integration — 2026-10-22
+
+The installed profile now uses the existing MAFFEO loopback router
+(`http://127.0.0.1:8081/v1`, `gpt-oss-120b`) for dialogue, the existing private
+Groq credential for Whisper Large V3 recognition, and the existing LiveKit Fish
+voice. No Azure account, new Groq account or additional model server is required.
+The LiveKit Agents framework and private Baresip audio transport remain.
+
+The provider's Build plan was checked in its authenticated dashboard on October
+22; it enforces a hard stop at the included allowance. Exact remaining inference
+credits were unavailable in the dashboard and remain UNKNOWN. A project-bound
+plan observation expires after seven days: recheck the dashboard before refreshing
+it, never just change the date. A paid-plan change must disable this exemption.
+The original reservation ledger is retained; attempts are not provider credits.
+
+Fresh MCP processes recover a missing daemon before sending a request. They never
+replay a call after a disconnect. Existing MCP processes retain imported code:
+reconnect the server/session to receive the new readiness output. New sessions
+use the same registered executable; unrelated MCP servers are untouched.
+
+See [executed integration checks](docs/INTEGRATION-2026-10-22.md). This is free
+within real provider limits, not unlimited calling or a delivery guarantee.
+
 ## Use from Codex and GitHub Copilot
 
 The shared local MCP adapter and personal decision policy can be registered for
 Codex, Copilot CLI and the normal GitHub Copilot desktop app. The desktop app
 was verified Connected and executed the real status tool. See [agent integration](docs/AGENT-INTEGRATION.md) for installation,
 permissions, removal and exact test scope. Both installed agents reached the real
-daemon; new phone acceptance through MCP is blocked by the exhausted local cap.
+daemon. The earlier 12-attempt block is superseded only for a freshly verified Build-plan project.
 
 ## Quick start
 

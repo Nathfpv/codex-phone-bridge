@@ -70,5 +70,6 @@ class Store:
                         (status,time.time() if status in ('ENDING','FAILED') else None,error,cid)); self.db.commit()
     def recover(self):
         self.db.execute("UPDATE questions SET status='ORPHANED' WHERE status='WAITING'")
+        self.db.execute("UPDATE questions SET status='EXPIRED' WHERE status IN ('PENDING','WAITING','ORPHANED') AND deadline<?",(time.time(),))
         self.db.execute("UPDATE calls SET status='FAILED',error='service_restart',ended=? WHERE ended IS NULL",(time.time(),))
         self.db.commit()

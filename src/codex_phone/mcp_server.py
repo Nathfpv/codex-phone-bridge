@@ -6,7 +6,8 @@ connection, cancelling its call. Stdout contains protocol messages only.
 import asyncio
 import json
 import sys
-from .storage import home
+from .storage import ROOT, home, config
+from .readiness import call_readiness
 
 INSTRUCTIONS = ('Use phone_decision when a product/design choice genuinely blocks the current task. '
                 'Ask one concrete question with enough context and options. Continue this same task '
@@ -19,13 +20,34 @@ TOOLS = [
          'kind':{'type':'string','enum':['product','design']},
          'question':{'type':'string','minLength':1,'maxLength':2000}},
          'required':['kind','question'],'additionalProperties':False}},
-    {'name':'phone_status','description':'Check bridge and local call allowance without making a call.',
+    {'name':'phone_status','description':'Check budget and preflight readiness without calling; provider balance and iPhone delivery may remain unknown.',
      'inputSchema':{'type':'object','properties':{},'additionalProperties':False},
      'annotations':{'readOnlyHint':True}},
 ]
 
 async def daemon(message):
-    reader, writer = await asyncio.open_unix_connection(str(home()/'control.sock'))
+    socket = str(home()/'control.sock')
+    try:
+        reader, writer = await asyncio.open_unix_connection(socket)
+    except (FileNotFoundError, ConnectionRefusedError):
+        # Recover only before sending: never replay a potentially delivered call.
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, str(ROOT/'bin/codex-phone'), 'start',
+            stdin=asyncio.subprocess.DEVNULL, stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL)
+        try:
+            code = await asyncio.wait_for(proc.wait(), 10)
+        except asyncio.TimeoutError:
+            proc.kill(); await proc.wait()
+            raise RuntimeError('Bridge startup timed out; no call sent')
+        except asyncio.CancelledError:
+            if proc.returncode is None:
+                proc.kill()
+            await proc.wait()
+            raise
+        if code:
+            raise RuntimeError('Bridge startup failed; inspect private daemon.log')
+        reader, writer = await asyncio.open_unix_connection(socket)
     try:
         writer.write(json.dumps(message).encode()+b'\n')
         await writer.drain()
@@ -51,17 +73,8 @@ async def tool(name, arguments):
                     'instruction':'Decision remains unresolved. Do not guess or retry automatically.'}
         return {'confirmed':True,'decision':result['decision'],'source':'confirmed_cloud_sip_speech'}
     if name=='phone_status' and not arguments:
-        import sqlite3
-        import time
         result=await daemon({'op':'status'})
-        used=0
-        path=home()/'voice-budget.sqlite3'
-        if path.exists():
-            with sqlite3.connect('file:'+str(path)+'?mode=ro',uri=True) as db:
-                used=db.execute('SELECT COUNT(*) FROM reservations WHERE month=?',
-                                (time.strftime('%Y-%m',time.gmtime()),)).fetchone()[0]
-        return {'bridge':result['call_state'],'local_calls_used':used,'local_monthly_cap':12,
-                'can_call':used<12,'provider_remaining_allowance':'UNKNOWN'}
+        return {'bridge':result['call_state'], **call_readiness(config(), result['call_state'])}
     raise ValueError('Unknown tool or invalid arguments')
 
 async def serve():
