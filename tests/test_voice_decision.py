@@ -63,6 +63,25 @@ class SpokenDecisionTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 d.confirm()
 
+    def test_explicit_finish_phrases_require_readback_and_new_turn(self):
+        for phrase in ('Ja, wir schicken ab.', 'Ja, bitte abschicken.',
+                       'Ja, wir schliessen ab.', 'Ja, bitte abschließen.'):
+            with self.subTest(phrase=phrase):
+                d = Decision(); d.propose('Option A'); d.heard(phrase)
+                with self.assertRaises(ValueError):
+                    d.confirm()
+                d.read_back()
+                with self.assertRaises(ValueError):
+                    d.confirm()
+                d.heard(phrase)
+                self.assertEqual(d.confirm(), 'Option A')
+        for phrase in ('Ja, wir schicken ab, aber erst morgen',
+                       'Ja, wir schliessen ab, wenn du es geändert hast',
+                       'Ja, bitte nicht abschicken', 'Ja, abschicken?'):
+            d = Decision(); d.propose('Option A'); d.read_back(); d.heard(phrase)
+            with self.assertRaises(ValueError):
+                d.confirm()
+
     def test_no_proposal_or_oversize(self):
         d = Decision()
         d.heard('Ja')

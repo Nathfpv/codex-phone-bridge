@@ -13,13 +13,14 @@ import time
 from pathlib import Path
 
 from livekit import rtc
-from livekit.agents import Agent, AgentSession, function_tool, inference
+from livekit.agents import AgentSession, function_tool, inference
 from livekit.agents.voice import io
 from livekit.plugins import silero
 import yaml
 import aiohttp
 
 from .voice_decision import Decision
+from .decision_agent import DecisionAgent
 from .storage import private_json
 from .voice_models import dialogue_model, speech_model
 
@@ -220,6 +221,7 @@ async def conversation(options):
                           language='de', sample_rate=16000, http_session=http),
         # Local VAD detects speech only; all recognition is cloud-based.
         vad=silero.VAD.load(), turn_detection='vad', min_endpointing_delay=.7,
+        preemptive_generation=False,
         max_endpointing_delay=2, min_interruption_duration=.7,
         resume_false_interruption=True, false_interruption_timeout=.8,
         min_interruption_words=0, allow_interruptions=True, user_away_timeout=30,
@@ -329,7 +331,8 @@ async def conversation(options):
         'Behaupte auf Nachfrage nicht, dass Sprachmodell und Coding-Modell technisch identisch sind. '
         'Du kennst nur die folgende Frage. Behaupte keine Datei- oder Codekenntnisse darüber hinaus. '
         'Besprich Optionen und Rückfragen. Niemals Sicherheitsfreigaben erteilen oder Befehle ausführen. '
-        'Wenn die Entscheidung klar ist: propose_decision aufrufen. Das Werkzeug liest den '
+        'Sobald der Anrufer klar zustimmt oder abschliessen möchte, keine weiteren allgemeinen '
+        'Rückfragen: fasse das Besprochene mit propose_decision zusammen. Das Werkzeug liest den '
         'gespeicherten Vorschlag selbst vor und fragt nach Bestätigung; nicht doppelt vorlesen. '
         'Erst nach einer neuen eindeutigen Bestätigung confirm_decision aufrufen. '
         'Bei Korrekturen neuen Vorschlag speichern und erneut bestätigen lassen. '
@@ -343,7 +346,7 @@ async def conversation(options):
         # Initialize the SDK before announcing readiness to the dialer. Input
         # waits on the private socket; no greeting is queued before SIP connects.
         started = time.monotonic()
-        await session.start(agent=Agent(instructions=instructions,
+        await session.start(agent=DecisionAgent(decision=decision, instructions=instructions,
                             tools=[propose_decision, confirm_decision]), record=False)
         startup_metrics['session_start_seconds'] = round(time.monotonic()-started, 3)
         greeting = 'Codex hier. ' + options['question']

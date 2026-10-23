@@ -124,7 +124,7 @@ async def main(args):
         for _ in range(3):
             if task.done():
                 break
-            await say('Ja, genau.')
+            await say('Ja, wir schicken ab.')
             await asyncio.sleep(7)
         answer, metrics = await asyncio.wait_for(task, 30)
         answer = answer.lower()
