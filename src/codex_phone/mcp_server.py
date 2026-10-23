@@ -9,12 +9,14 @@ import sys
 from .storage import ROOT, home, config
 from .readiness import call_readiness
 
-INSTRUCTIONS = ('Use phone_decision when a product/design choice genuinely blocks the current task. '
-                'Ask one concrete question with enough context and options. Continue this same task '
-                'only after confirmed=true. Never use voice for shell, file, network, sandbox or '
+INSTRUCTIONS = ('When the user asks to be called, use phone_call immediately after phone_status, without asking for a reason. The topic may be given during the call. Use phone_decision when a product/design choice genuinely blocks the current task. '
+                'For phone_decision, ask one concrete question with enough context and options. Act on that decision '
+                'only after confirmed=true. Open calls return completed, never a confirmed decision. Never use voice for shell, file, network, sandbox or '
                 'account authorization. On failure keep the decision unresolved; do not guess or '
                 'retry automatically. phone_status checks availability without calling.')
 TOOLS = [
+    {'name':'phone_call','description':'Call the owner now for an open conversation when explicitly requested. No reason, topic or decision is required. Uses the configured personal destination; voice cannot authorize security-sensitive actions.',
+     'inputSchema':{'type':'object','properties':{},'additionalProperties':False}},
     {'name':'phone_decision','description':INSTRUCTIONS,
      'inputSchema':{'type':'object','properties':{
          'kind':{'type':'string','enum':['product','design']},
@@ -62,6 +64,9 @@ async def daemon(message):
 
 async def tool(name, arguments):
     if not isinstance(arguments,dict):raise ValueError('Invalid tool arguments')
+    if name=='phone_call' and not arguments:
+        result=await daemon({'op':'phone-call'})
+        return {key:value for key,value in result.items() if key in ('completed','status','reason','call_id','metrics')}
     if name=='phone_decision':
         if set(arguments)!={'kind','question'}:raise ValueError('Invalid decision fields')
         if arguments['kind'] not in ('product','design') or not isinstance(arguments['question'],str) or not 1<=len(arguments['question'])<=2000:
@@ -89,7 +94,7 @@ async def serve():
                 version=params.get('protocolVersion','2024-11-05')
                 if version not in ('2024-11-05','2025-03-26','2025-06-18','2025-11-25'):version='2024-11-05'
                 result={'protocolVersion':version,'capabilities':{'tools':{}},
-                        'serverInfo':{'name':'codex-phone-bridge','version':'0.2.0'},'instructions':INSTRUCTIONS}
+                        'serverInfo':{'name':'codex-phone-bridge','version':'0.3.0'},'instructions':INSTRUCTIONS}
             elif method=='ping':result={}
             elif method=='tools/list':result={'tools':TOOLS}
             elif method=='tools/call':

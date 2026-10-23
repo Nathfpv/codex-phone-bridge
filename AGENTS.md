@@ -33,3 +33,7 @@ Voice output must implement real pause/resume before advertising it; run
 `tests/test_pcm_pause.py` and `tests/test_turn_playout.py` with the voice venv.
 A successful SpeechHandle alone does not prove PCM completion: readback also
 checks interrupted/failed output segments before enabling confirmation.
+
+Explicit owner requests such as “Ruf mich an” use argument-free `phone_call`; no
+reason or product/design choice is required. Open-call completion never authorizes
+changes or creates a confirmed decision. Keep its lifecycle separate from decisions.

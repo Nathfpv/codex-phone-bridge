@@ -2,7 +2,7 @@
 """Register only this MCP entry; preserve unrelated user settings.
 
 Run with the optional voice environment's Python 3.12 (tomllib is stdlib).
-No secrets or blanket tool approvals are added; only the two decision tools
+No secrets or blanket tool approvals are added; only the three phone tools
 are preapproved in Codex, as authorized by the bridge integration request.
 """
 import json
@@ -34,9 +34,10 @@ try:
         text,count=re.subn(pattern,timeout,text,flags=re.M|re.S)
         if count!=1:raise RuntimeError('Cannot safely locate the existing Codex MCP entry')
     header='[mcp_servers.codex-phone]\n'
-    for tool in ('phone_decision','phone_status'):
+    for tool in ('phone_call','phone_decision','phone_status'):
         line=f'tools.{tool}.approval_mode = "approve"\n'
-        if line not in text:text=text.replace(header,header+line,1)
+        existing_tools=before_codex.get('mcp_servers',{}).get(name,{}).get('tools',{})
+        if tool not in existing_tools:text=text.replace(header,header+line,1)
     codex_path.write_text(text)
     if name not in before_copilot.get('mcpServers',{}):
         subprocess.run(['copilot','mcp','add',name,'--timeout','900000','--',entry],
@@ -64,11 +65,15 @@ except BaseException:
         elif path.exists():path.unlink()
     raise
 print('Registered codex-phone for Codex and Copilot CLI; unrelated settings preserved.')
-print('Restart existing agent sessions to discover the new tools. Only phone_decision/phone_status are preapproved in Codex; all security approvals remain separate.')
+print('Restart existing agent sessions to discover the new tools. Only phone_call/phone_decision/phone_status are preapproved in Codex; all security approvals remain separate.')
 
 policy=(root/'docs/AGENT-POLICY.md').read_text()
 for path in (Path.home()/'.codex/AGENTS.md',Path.home()/'.copilot/copilot-instructions.md'):
     text=path.read_text() if path.exists() else ''
-    if '<!-- codex-phone-bridge:start -->' not in text:
+    if '<!-- codex-phone-bridge:start -->' in text:
+        updated,count=re.subn(r'<!-- codex-phone-bridge:start -->.*?<!-- codex-phone-bridge:end -->', lambda _:policy.strip(), text, flags=re.S)
+        if count!=1:raise RuntimeError('Ambiguous phone policy markers')
+        path.write_text(updated)
+    else:
         path.write_text(text+'\n'+policy)
 print('Phone decision policy present in both personal instruction files.')

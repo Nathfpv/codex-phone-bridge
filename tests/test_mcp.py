@@ -175,6 +175,96 @@ class Decisions(unittest.IsolatedAsyncioTestCase):
                 response=json.loads(await asyncio.wait_for(process.stdout.readline(),2))
                 self.assertEqual(response['id'],identity)
             self.assertEqual({item['name'] for item in response['result']['tools']},
-                             {'phone_decision','phone_status'})
+                             {'phone_call','phone_decision','phone_status'})
         finally:
             process.stdin.close();await asyncio.wait_for(process.wait(),2)
+
+
+class FreeCallTests(unittest.IsolatedAsyncioTestCase):
+    async def test_explicit_call_needs_no_reason(self):
+        with patch('codex_phone.mcp_server.daemon', AsyncMock(return_value={'completed':True,'status':'ENDED'})) as send:
+            value = await tool('phone_call', {})
+        send.assert_awaited_once_with({'op':'phone-call'})
+        self.assertTrue(value['completed'])
+        self.assertNotIn('decision', value)
+        self.assertNotIn('confirmed', value)
+
+    async def test_free_call_cannot_supply_recipient_or_approval(self):
+        for args in ({'recipient':'other'}, {'approval':True}, {'question':'why'}):
+            with self.assertRaises(ValueError):
+                await tool('phone_call', args)
+
+    async def test_free_call_routes_with_separate_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bridge=Bridge.__new__(Bridge);bridge.store=Store(Path(directory)/'state.sqlite3')
+            rows=[]
+            async def call(row,external=False):
+                rows.append(row)
+                self.assertTrue(external)
+                self.assertTrue(row['conversation'])
+                return {'completed':True,'status':'ENDED'}
+            bridge.call=call
+            value=await bridge.command({'op':'phone-call'})
+            self.assertTrue(value['completed'])
+            self.assertTrue(rows[0]['session_id'].startswith('mcp:'))
+            self.assertEqual(bridge.store.db.execute('SELECT status FROM questions').fetchone()[0], 'COMPLETED')
+            bridge.store.db.close()
+
+    async def test_connected_free_call_completes_without_decision_or_delivery(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as directory:
+            bridge=Bridge.__new__(Bridge);bridge.store=Store(Path(directory)/'state.sqlite3')
+            bridge.lock=asyncio.Lock();bridge.questions={};bridge.log=lambda *a,**k:None
+            bridge.deliver=AsyncMock()
+            sip=SimpleNamespace(start=AsyncMock(),dial=AsyncMock(),close=AsyncMock(),
+                event=AsyncMock(return_value={'type':'CALL_ESTABLISHED','direction':'outgoing',
+                                             'peeruri':'sip:device@example.invalid'}))
+            prepared=SimpleNamespace(options={},close=AsyncMock())
+            with patch('codex_phone.bridge.config',return_value={'voice_backend':'livekit','iphone_uri':'sip:device@example.invalid'}), \
+                 patch('codex_phone.bridge.Sip',return_value=sip), \
+                 patch('codex_phone.bridge.prepare_voice',AsyncMock(return_value=prepared)) as prepare, \
+                 patch('codex_phone.bridge.converse',AsyncMock(return_value=(None,{'ended_by_disconnect':True}))):
+                answer=await bridge.command({'op':'phone-call'})
+            self.assertTrue(prepare.call_args.args[2]['phone_conversation'])
+            self.assertTrue(answer['completed']);self.assertNotIn('decision',answer);self.assertNotIn('confirmed',answer)
+            bridge.deliver.assert_not_awaited()
+            self.assertEqual(bridge.store.db.execute('SELECT status FROM questions').fetchone()[0],'COMPLETED')
+            self.assertIsNone(bridge.store.db.execute('SELECT answer FROM questions').fetchone()[0])
+            sip.close.assert_awaited_once();prepared.close.assert_awaited_once()
+            bridge.store.db.close()
+
+    async def test_only_free_mode_accepts_connected_disconnect_as_completion(self):
+        from types import SimpleNamespace
+        from codex_phone.cloud_audio import converse
+        async def never():await asyncio.Future()
+        for free in (False, True):
+            with tempfile.TemporaryDirectory() as directory:
+                tx=Path(directory)/'tx';tx.touch()
+                disconnected=asyncio.Event();disconnected.set()
+                sip=SimpleNamespace(tx_path=str(tx),disconnected=disconnected)
+                proc=SimpleNamespace(stdin=SimpleNamespace(write=lambda x:None,drain=AsyncMock(),close=lambda:None),
+                                     stdout=SimpleNamespace(readline=never))
+                prepared=SimpleNamespace(proc=proc,options={'seconds':1,'conversation':free},close=AsyncMock())
+                if free:
+                    answer,metrics=await converse(sip,'',{},prepared)
+                    self.assertIsNone(answer);self.assertTrue(metrics['ended_by_disconnect'])
+                else:
+                    with self.assertRaisesRegex(RuntimeError,'disconnected'):
+                        await converse(sip,'',{},prepared)
+                prepared.close.assert_awaited_once()
+
+    async def test_registration_preserves_existing_nested_tool_tables(self):
+        import runpy,tomllib
+        root=Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as directory:
+            home=Path(directory);(home/'.codex').mkdir();(home/'.copilot').mkdir()
+            entry=str(root/'bin/codex-phone-mcp')
+            codex=home/'.codex/config.toml'
+            codex.write_text('[mcp_servers.other]\ncommand="keep"\n[mcp_servers.codex-phone]\ncommand='+json.dumps(entry)+'\n[mcp_servers.codex-phone.tools.phone_decision]\napproval_mode="approve"\n[mcp_servers.codex-phone.tools.phone_status]\napproval_mode="approve"\n')
+            copilot=home/'.copilot/mcp-config.json'
+            copilot.write_text(json.dumps({'mcpServers':{'codex-phone':{'command':entry}}}))
+            with patch('pathlib.Path.home',return_value=home):
+                for _ in range(2):runpy.run_path(str(root/'scripts/register-agents.py'))
+            value=tomllib.loads(codex.read_text())
+            self.assertEqual(value['mcp_servers']['other'],{'command':'keep'})
+            self.assertEqual(set(value['mcp_servers']['codex-phone']['tools']),{'phone_call','phone_status','phone_decision'})

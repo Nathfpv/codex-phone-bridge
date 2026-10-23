@@ -68,6 +68,8 @@ class Bridge:
                 state=s;self.store.call_state(cid,s);self.log('call_state',call=cid,status=s)
             try:
                 cfg=config()
+                if q.get('conversation'):
+                    cfg=dict(cfg, phone_conversation=True)
                 hour=time.localtime().tm_hour
                 quiet=cfg.get('quiet_hours',[])
                 if hour in quiet:raise RuntimeError('Quiet hours; question remains pending')
@@ -95,6 +97,10 @@ class Bridge:
                                   'session_start_seconds','media_ready_delay_seconds',
                                   'stt_audio_seconds','llm_input_tokens','llm_output_tokens','tts_characters')
                          and isinstance(v,(int,float))})
+                if q.get('conversation'):
+                    self.store.set_question(q['id'],'COMPLETED')
+                    transition('ENDING')
+                    return {'completed':True,'status':'ENDED','call_id':cid,'metrics':metrics}
                 if manual:self.store.set_question(q['id'],'TEST_COMPLETED')
                 elif external:self.store.set_question(q['id'],'ANSWERED',answer)
                 else:await self.deliver(q['id'],answer,source='confirmed_cloud_sip_speech')
@@ -139,18 +145,26 @@ class Bridge:
             count=self.store.db.execute('SELECT COUNT(*) FROM calls WHERE question_id=?',(q['id'],)).fetchone()[0]
             if count>=2:raise RuntimeError('Two-call retry limit reached')
             return await self.call(q)
-        if op=='phone-decision':
+        if op in ('phone-decision','phone-call'):
             import uuid
-            if msg.get('kind') not in ('product','design') or not isinstance(msg.get('question'),str) or not 1<=len(msg['question'])<=2000:
-                raise ValueError('Only bounded product/design questions are accepted')
+            conversation=op=='phone-call'
+            if conversation:
+                if set(msg)!={'op'}:raise ValueError('Open calls accept no arguments')
+                question='Ich bin da. Worüber möchtest du sprechen?'
+            else:
+                if msg.get('kind') not in ('product','design') or not isinstance(msg.get('question'),str) or not 1<=len(msg['question'])<=2000:
+                    raise ValueError('Only bounded product/design questions are accepted')
+                question=msg['question']
             # Identity is generated locally, never supplied by the model. The
             # answer returns on this connection, not through another agent API.
             identity='mcp:'+str(uuid.uuid4())
-            q=self.store.add(identity,identity,identity,msg['question'],time.time()+600)
+            q=self.store.add(identity,identity,identity,question,time.time()+600)
+            if conversation:q=dict(q,conversation=True)
             self.store.set_question(q['id'],'WAITING')
             try:
                 result=await self.call(q,external=True)
-                if result.get('confirmed') is not True:self.store.set_question(q['id'],'ORPHANED')
+                if conversation and result.get('completed') is True:self.store.set_question(q['id'],'COMPLETED')
+                elif result.get('confirmed') is not True:self.store.set_question(q['id'],'ORPHANED')
                 return result
             except asyncio.CancelledError:
                 self.store.set_question(q['id'],'ORPHANED')
