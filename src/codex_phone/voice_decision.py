@@ -28,15 +28,18 @@ class Decision:
             raise ValueError('No proposal to read back')
         self.read_back_at = self.turn
 
-    def confirm(self):
-        # A second, explicit utterance is required; a tool call is not consent.
-        normalized = ' '.join(re.sub(r'[^a-zäöüß ]', '', self.last_text.lower()).split())
+    @staticmethod
+    def is_confirmation(text):
+        normalized = ' '.join(re.sub(r'[^a-zäöüß ]', '', text.lower()).split())
         accepted = {'ja', 'ja genau', 'genau', 'passt', 'bestätigt', 'bestätigen',
                     'ja bitte', 'ja mach das', 'ja so machen', 'ja das passt',
                     'ja passt', 'richtig', 'stimmt', 'yes', 'correct', 'confirm',
                     'ja gerne', 'ja das ist richtig', 'ja das stimmt', 'so passt es',
                     'ja kannst du so machen', 'ja das kannst du so machen',
-                    'ja bitte weitergeben', 'antwort bestätigen', 'jo', 'jo genau'}
+                    'ja bitte weitergeben', 'antwort bestätigen', 'jo', 'jo genau',
+                    'ja wir schicken ab', 'ja bitte abschicken', 'ja abschicken',
+                    'ja wir schliessen ab', 'ja wir schließen ab',
+                    'ja bitte abschliessen', 'ja bitte abschließen'}
         # Compose ordinary positive phrases, but reject questions, negations,
         # qualifications and new product content. The model cannot bypass this.
         words = normalized.split()
@@ -48,7 +51,11 @@ class Decision:
                        'können','kann','übernimm','es'}
         natural_yes = bool(words and words[0] in positive and
                            all(w in continuation for w in words))
-        if (self.proposal is None or self.read_back_at is None or self.turn <= self.read_back_at or
-                '?' in self.last_text or not (normalized in accepted or natural_yes)):
+        return '?' not in text and (normalized in accepted or natural_yes)
+
+    def confirm(self):
+        # A second, explicit utterance is required; a tool call is not consent.
+        if (self.proposal is None or self.read_back_at is None or
+                self.turn <= self.read_back_at or not self.is_confirmation(self.last_text)):
             raise ValueError('A new, unambiguous spoken confirmation is required')
         return self.proposal
