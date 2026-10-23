@@ -28,3 +28,8 @@ in their existing private stores and SDK observations distinct from provider bil
 Already-running MCP processes retain imported code. Verify new behavior through
 a fresh stdio client; reconnect old clients rather than erasing ledgers or killing
 unrelated agent sessions. Runtime selectors provide explicit provider rollback.
+
+Voice output must implement real pause/resume before advertising it; run
+`tests/test_pcm_pause.py` and `tests/test_turn_playout.py` with the voice venv.
+A successful SpeechHandle alone does not prove PCM completion: readback also
+checks interrupted/failed output segments before enabling confirmation.
