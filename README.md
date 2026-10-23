@@ -2,8 +2,10 @@
 
 **Experimental / PARTIAL. Real cloud phone-to-Codex continuation has been verified technically. Locked-iPhone ringing and two-way cloud speech were owner-confirmed; the owner also confirmed the final decision, caller name Codex and immediate, complete opening speech. Repeated reliability and mobile-data checks remain open.**
 
-A local macOS bridge for product/design decisions during controller-owned Codex tasks:
-Codex asks a structured question, Baresip calls the owner's personal Linphone SIP account,
+A local macOS bridge for explicitly requested open conversations and product/design decisions during controller-owned Codex tasks:
+Use `phone_call` without arguments for “Ruf mich an”, even without a topic. Open calls have no decision/readback requirement and return completion only, never authorization or a confirmed decision. Calls remain bounded to five minutes and the configured personal destination.
+
+For decisions, Codex asks a structured question. Baresip calls the owner's personal Linphone SIP account,
 an experimental LiveKit backend streams SIP audio through cloud recognition, a separate
 conversation model, and Fish voice. Local transcription is disabled for calls.
 The owner must confirm the read-back before the answer is returned to the pending request

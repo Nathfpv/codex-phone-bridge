@@ -3,6 +3,7 @@
 This remains one standalone project/repository. No copy of the bridge is placed
 inside other development projects. The local stdio MCP executable exposes:
 
+- `phone_call()`: explicitly requested open conversation, no topic required. No decision is inferred; completion is separate from confirmation.
 - `phone_status`: bridge state, separate budget eligibility, explicit preflight checks and UNKNOWN provider balance.
 - `phone_decision(kind, question)`: one bounded product/design decision. Include
   options/context directly in the question, at most 2000 characters.
@@ -39,8 +40,8 @@ ordinary implementation proceeds autonomously. A status check avoids calls when
 the local quota is exhausted. Tool availability is guidance, not a guarantee
 that every model will identify every possible blocking decision.
 
-Only `phone_decision` and `phone_status` are preapproved in Codex. Copilot retains
-its ordinary per-project tool permission flow; approve only these two tools when
+Only `phone_call`, `phone_decision` and `phone_status` are preapproved in Codex. Copilot retains
+its ordinary per-project tool permission flow; approve only these three tools when
 asked. For a deliberate noninteractive Copilot invocation, explicit narrow flags
 are supported:
 
@@ -106,3 +107,24 @@ blocks. It preserves other servers and instructions. Restart client sessions.
 Official interfaces checked: [Codex MCP](https://learn.chatgpt.com/docs/extend/mcp),
 [Copilot CLI MCP](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-mcp-servers),
 [Copilot personal instructions](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-config-dir-reference).
+
+
+## Open-call activation — 2026-10-23
+
+Explicit “Ruf mich an” now uses argument-free `phone_call`, without a topic or
+blocking decision. The voice agent listens for the topic during the conversation;
+it has an end-conversation tool and no decision/confirmation tools. Completion
+returns only status/metrics, never an answer or authorization. The existing
+personal destination, allowance, quiet-hours, cancellation and no-replay guards
+remain. The five-minute conversation bound remains.
+
+Executed: 59 offline tests PASS, including argument rejection, separate request
+identity, connected free-call completion without decision delivery, free-only
+hangup completion, worker-reader cancellation and registration idempotency with
+nested TOML tool tables. Fresh-context review found no blocking issues.
+Registration preserved unrelated settings; the idle daemon was restarted and the
+new tool was discovered in the actual calling session. One actual `phone_call()`
+returned `completed=true`, `status=ENDED`, three user turns and 49,896 output PCM
+samples. This is one connected real call, not repeated reliability, subjective
+voice quality or all-network delivery proof. Global rules and the owner's memory
+preference were updated. No automatic retry was used.

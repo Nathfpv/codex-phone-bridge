@@ -97,7 +97,7 @@ async def prepare_voice(sip, question, cfg):
                    recognition_backend=cfg.get('recognition_backend', 'livekit'),
                    rx_fd=sip.rx.fileno(), tx_fd=sip.tx.fileno(), tx_path=sip.tx_path,
                    status_path=str(home() / 'cloud-status.json'), preconnect=True,
-                   question=question, seconds=min(voice.get('max_call_seconds', 300), 300))
+                   question=question, conversation=cfg.get('phone_conversation',False), seconds=min(voice.get('max_call_seconds', 300), 300))
     proc = await asyncio.create_subprocess_exec(
         str(python), '-m', 'codex_phone.cloud_voice', env=env,
         pass_fds=(sip.rx.fileno(), sip.tx.fileno()),
@@ -138,6 +138,8 @@ async def converse(sip, question, cfg, prepared=None):
         done, _ = await asyncio.wait([task, disconnected], timeout=options['seconds']+20,
                                      return_when=asyncio.FIRST_COMPLETED)
         if task not in done:
+            if options.get('conversation') and disconnected in done:
+                return None, {'ended_by_disconnect':True}
             raise RuntimeError('Call disconnected or cloud conversation timed out')
         stdout = task.result()
         if proc.returncode not in (None, 0) or len(stdout) > 16384:
@@ -150,7 +152,7 @@ async def converse(sip, question, cfg, prepared=None):
             raise RuntimeError('No confirmed cloud decision')
         return answer, data.get('metrics', {})
     finally:
-        if disconnected:
-            disconnected.cancel()
+        for pending in (task, disconnected):
+            if pending and not pending.done():pending.cancel()
         await prepared.close()
         await asyncio.gather(*(t for t in (task, disconnected) if t), return_exceptions=True)

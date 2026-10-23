@@ -1,6 +1,11 @@
 
 <!-- codex-phone-bridge:start -->
-## Telefonische Produkt- und Designentscheidungen
+## Telefonanrufe und Entscheidungen
+
+Wenn der Nutzer einen Anruf verlangt («Ruf mich an», «ich möchte reden»), prüfe
+`phone_status` und starte bei `can_call=true` sofort `codex-phone.phone_call` ohne
+Argumente. Kein Grund, Thema oder Entscheidungsbedarf ist nötig; das Anliegen darf
+erst im Gespräch kommen. Bei Fehler keinen automatischen Wiederholungsanruf starten.
 
 Wenn eine notwendige Produkt- oder Designentscheidung die laufende Aufgabe blockiert,
 verwende das lokale MCP-Werkzeug `codex-phone.phone_decision` mit einer konkreten Frage
