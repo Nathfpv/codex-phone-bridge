@@ -57,3 +57,12 @@ The installed controller starts a fresh voice worker for each call, so the next
 authorized call loads this fix without terminating unrelated MCP sessions.
 Only source/docs/tests and the existing private operational runtime remain;
 synthetic test directories were removed on exit.
+
+## Subsequent authorized human test
+
+A later owner-authorized call connected and returned a confirmed design decision:
+use normal High German without Swiss dialect, and finish short replies before
+waiting for the caller to interject. These supersede the Swiss-German output
+preference above. Updated spoken instructions accordingly. PCM pause/recovery
+and consent guards remain active. This connected call proves a returned spoken
+confirmation, not universal device reliability or absence of every silent gap.
