@@ -51,9 +51,9 @@ class SipInput(io.AudioInput):
 
 
 class SipOutput(io.AudioOutput):
-    def __init__(self, sock, path=None):
+    def __init__(self, sock, path=None, diagnostic=lambda *args: None):
         super().__init__(label='private-sip-pcm',
-                         capabilities=io.AudioOutputCapabilities(pause=False), sample_rate=16000)
+                         capabilities=io.AudioOutputCapabilities(pause=True), sample_rate=16000)
         self.sock = sock
         self.connected = False
         if path is not None:
@@ -64,6 +64,21 @@ class SipOutput(io.AudioOutput):
         self.tail = b''
         self.next_at = 0
         self.first_packet_at = None
+        self.diagnostic = diagnostic
+        self.play_enabled = asyncio.Event()
+        self.play_enabled.set()
+        self.pending_flush = None
+        self.failed_playbacks = 0
+
+    def pause(self):
+        self.play_enabled.clear()
+        self.diagnostic('output_paused')
+
+    def resume(self):
+        # Resume in real time; never burst packets to catch up after a pause.
+        self.next_at = asyncio.get_running_loop().time()
+        self.play_enabled.set()
+        self.diagnostic('output_resumed')
 
     def connect(self, path):
         self.sock.connect(path)
@@ -74,12 +89,22 @@ class SipOutput(io.AudioOutput):
             raise RuntimeError("SIP output is not connected")
         if frame.sample_rate != 16000 or frame.num_channels != 1:
             raise RuntimeError('Unexpected output PCM format')
-        await super().capture_frame(frame)
         epoch = self.epoch
+        if self.pending_flush is not None:
+            try:
+                await self.pending_flush
+            except asyncio.CancelledError:
+                if epoch == self.epoch:
+                    raise
+            if epoch != self.epoch:
+                return
+        await super().capture_frame(frame)
         self.tail += bytes(frame.data)
         loop = asyncio.get_running_loop()
         while len(self.tail) >= 640 and epoch == self.epoch:
+            await self.play_enabled.wait()
             await asyncio.sleep(max(0, self.next_at - loop.time()))
+            await self.play_enabled.wait()
             if epoch != self.epoch:
                 return
             packet, self.tail = self.tail[:640], self.tail[640:]
@@ -96,33 +121,72 @@ class SipOutput(io.AudioOutput):
             self.total_samples += 320
             self.next_at = max(self.next_at, loop.time()) + .02
 
-    def flush(self):
-        super().flush()
+    def _finish(self):
         if self.tail:
+            if self.samples == 0:
+                self.on_playback_started(created_at=time.time())
             self.sock.send(self.tail.ljust(640, b'\0'))
-            self.samples += len(self.tail) // 2
+            count = len(self.tail) // 2
+            self.samples += count
+            self.total_samples += count
+            if self.first_packet_at is None:
+                self.first_packet_at = time.monotonic()
             self.tail = b''
         if self._pending_playback_count:
             self.on_playback_finished(playback_position=self.samples / 16000, interrupted=False)
         self.samples = 0
 
+    async def _finish_after_resume(self, epoch):
+        await self.play_enabled.wait()
+        if epoch == self.epoch:
+            try:
+                self._finish()
+            except OSError:
+                # Deferred flush has no synchronous caller to receive transport
+                # failures. Resolve SDK waiters as interrupted, never successful.
+                self.tail = b''
+                self.failed_playbacks += 1
+                if self._pending_playback_count:
+                    self.on_playback_finished(
+                        playback_position=self.samples / 16000, interrupted=True)
+                self.samples = 0
+                self.diagnostic('output_flush_failed')
+
+    def flush(self):
+        super().flush()
+        # A paused final partial packet is still speech. Do not send it or
+        # acknowledge completion until resumed; subsequent segments wait for it.
+        if not self.play_enabled.is_set():
+            if self.pending_flush is None or self.pending_flush.done():
+                self.pending_flush = asyncio.create_task(self._finish_after_resume(self.epoch))
+        else:
+            self._finish()
+
     def clear_buffer(self):
         self.epoch += 1
         self.tail = b''
+        if self.pending_flush is not None:
+            self.pending_flush.cancel()
+            self.pending_flush = None
+        self.play_enabled.set()  # wake producers so they can observe the new epoch
         super().flush()
         if self._pending_playback_count:
+            self.failed_playbacks += 1
             self.on_playback_finished(playback_position=self.samples / 16000, interrupted=True)
         self.samples = 0
         self.next_at = 0
+        self.diagnostic('output_cleared')
 
 
 async def read_back_proposal(session, decision, answer):
     proposal = decision.propose(answer)
     before = session.output.audio.total_samples
+    failures_before = getattr(session.output.audio, 'failed_playbacks', 0)
     handle = session.say('Ich habe festgehalten: ' + proposal +
                          ' Soll ich das genau so umsetzen?', allow_interruptions=False)
     await handle.wait_for_playout()
-    if handle.exception() or handle.interrupted or session.output.audio.total_samples <= before:
+    if (handle.exception() or handle.interrupted or session.output.audio.total_samples <= before
+            or getattr(session.output.audio, 'failed_playbacks', 0) != failures_before):
         raise RuntimeError('Readback audio did not finish successfully')
     decision.read_back()
     return proposal
@@ -155,8 +219,9 @@ async def conversation(options):
         tts=inference.TTS(model='fishaudio/s2.1-pro', voice=options['voice_id'],
                           language='de', sample_rate=16000, http_session=http),
         # Local VAD detects speech only; all recognition is cloud-based.
-        vad=silero.VAD.load(), turn_detection='vad', min_endpointing_delay=.45,
-        max_endpointing_delay=2, min_interruption_duration=.25,
+        vad=silero.VAD.load(), turn_detection='vad', min_endpointing_delay=.7,
+        max_endpointing_delay=2, min_interruption_duration=.7,
+        resume_false_interruption=True, false_interruption_timeout=.8,
         min_interruption_words=0, allow_interruptions=True, user_away_timeout=30,
     )
     session.input.audio = SipInput(rx)
@@ -183,14 +248,22 @@ async def conversation(options):
             value = getattr(metric, field, 0)
             if isinstance(value, (int, float)) and value >= 0:
                 usage[target] += value
+        for field in ('ttft', 'ttfb', 'end_of_utterance_delay', 'transcription_delay'):
+            value = getattr(metric, field, None)
+            if isinstance(value, (int, float)) and value >= 0:
+                diagnostic('latency_' + field, round(value, 3))
         save_usage()
+
+    @session.on('agent_false_interruption')
+    def false_interruption(event):
+        diagnostic('false_interruption', event.resumed)
 
     @function_tool
     async def propose_decision(answer: str):
         """Save a product/design proposal BEFORE reading it back and asking for confirmation."""
         diagnostic('proposal')
         proposal = await read_back_proposal(session, decision, answer)
-        return {'proposal': proposal, 'next': 'The exact proposal has been spoken. Wait for a NEW explicit confirmation; do not repeat it.'}
+        return {'proposal': proposal, 'next': 'Der Vorschlag wurde vorgelesen. Warte auf eine NEUE ausdrückliche Bestätigung; wiederhole ihn nicht.'}
 
     @function_tool
     async def confirm_decision():
@@ -200,7 +273,7 @@ async def conversation(options):
             answer = decision.confirm()
         except ValueError:
             diagnostic('confirmation_rejected')
-            return {'confirmed': False, 'next': 'Ask the caller to say Ja or to correct the proposal.'}
+            return {'confirmed': False, 'next': 'Bitte um ein ausdrückliches Ja oder eine Korrektur des Vorschlags.'}
         if not result.done():
             result.set_result(answer)
         return {'confirmed': True}
@@ -246,7 +319,10 @@ async def conversation(options):
 
     instructions = (
         'Du bist Codex im Telefonkanal einer laufenden Entwicklungsaufgabe. '
-        'Sprich Deutsch, natürlich, kurz und ohne Markdown. Verstehe auch Schweizerdeutsch. '
+        'Sprich ausschliesslich Deutsch, auch bei Rückfragen und Werkzeugergebnissen. '
+        'Verstehe Schweizerdeutsch und antworte in natürlichem, gut verständlichem Schweizerdeutsch. '
+        'Formuliere kurze vollständige Sätze ohne Markdown, englische Floskeln oder lange Einleitungen. '
+        'Stelle höchstens eine Rückfrage auf einmal; lass den Anrufer ausreden. '
         'Sprich direkt als Codex: Ich setze um, ich mache weiter. Keine Bridge- oder Weiterleitungsansagen. '
         'Behaupte auf Nachfrage nicht, dass Sprachmodell und Coding-Modell technisch identisch sind. '
         'Du kennst nur die folgende Frage. Behaupte keine Datei- oder Codekenntnisse darüber hinaus. '
@@ -259,7 +335,7 @@ async def conversation(options):
     )
     before = time.monotonic()
     startup_metrics = {}
-    session.output.audio = SipOutput(tx)
+    session.output.audio = SipOutput(tx, diagnostic=diagnostic)
     options['_stage'] = 'session_start'
     try:
         # Initialize the SDK before announcing readiness to the dialer. Input
@@ -295,9 +371,9 @@ async def conversation(options):
             async def prepared_audio():
                 for frame in frames:
                     yield frame
-            session.say(greeting, audio=prepared_audio(), allow_interruptions=True)
+            session.say(greeting, audio=prepared_audio(), allow_interruptions=False)
         else:
-            session.say(greeting, allow_interruptions=True)
+            session.say(greeting, allow_interruptions=False)
         answer = await asyncio.wait_for(result, min(int(options.get('seconds', 300)), 300))
         payload = {'answer': answer, 'metrics': {**startup_metrics, **usage, 'conversation_seconds': round(time.monotonic()-before, 3),
                                                 'user_turns': decision.turn,
