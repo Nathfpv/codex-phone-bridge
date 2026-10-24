@@ -41,6 +41,19 @@ class Persistence(unittest.TestCase):
         for uri in ('tel:+41000000000','sip:someone@evil.example','sip:abc@sip.linphone.org;transport=udp','sip:abc@sip.linphone.org\n/quit','sip:$(id)@sip.linphone.org'):
             with self.assertRaises(ValueError):validate_uri(uri)
 
+class ConfirmedReceipt(unittest.TestCase):
+    def test_cleanup_or_orphaning_cannot_erase_confirmed_answer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory)/'state.sqlite3')
+            try:
+                q = store.add('a', 'b', 'c', 'Choose', time.time()+60)
+                store.set_question(q['id'], 'ANSWERED', 'X')
+                store.set_question(q['id'], 'ORPHANED')
+                row = store.db.execute('SELECT status,answer FROM questions').fetchone()
+                self.assertEqual(tuple(row), ('ANSWERED', 'X'))
+            finally:
+                store.db.close()
+
 class Routing(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp=tempfile.TemporaryDirectory();os.environ['CODEX_PHONE_HOME']=self.tmp.name

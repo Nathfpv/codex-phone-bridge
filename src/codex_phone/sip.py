@@ -33,7 +33,7 @@ class Sip:
     def __init__(self, cfg=None, *, local_port=None, peer=None):
         self.cfg=cfg; self.local_port=local_port; self.peer=peer
         self.dir=Path(tempfile.mkdtemp(prefix='cpb-')); self.dir.chmod(0o700)
-        self.disconnected=asyncio.Event();self.events=asyncio.Queue(); self.waiters={}; self.tasks=[]; self.proc=None
+        self.call_closed=asyncio.Event();self.disconnected=asyncio.Event();self.events=asyncio.Queue(); self.waiters={}; self.tasks=[]; self.proc=None
         self.tx_path=str(self.dir/'tx'); self.rx_path=str(self.dir/'rx')
         self.rx=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM); self.rx.bind(self.rx_path)
         os.chmod(self.rx_path,0o600); self.rx.setsockopt(socket.SOL_SOCKET,socket.SO_RCVBUF,262144); self.rx.setblocking(False)
@@ -135,7 +135,8 @@ video_display none
                     f=self.waiters.pop(msg.get('token'),None)
                     if f and not f.done(): f.set_result(msg)
                 elif msg.get('event'):
-                    if msg.get('type')=='CALL_CLOSED':self.disconnected.set()
+                    if msg.get('type')=='CALL_CLOSED':
+                        self.call_closed.set();self.disconnected.set()
                     if self.cfg and msg.get('type')=='CALL_INCOMING':
                         # No unauthenticated incoming decision path in v1.
                         self.tasks.append(asyncio.create_task(self.hangup()))
@@ -165,7 +166,7 @@ video_display none
             validate_uri(uri)
             if uri!=self.cfg['iphone_uri']:raise ValueError('Destination must match the configured owner')
         elif uri!=self.peer: raise ValueError('Local test peer mismatch')
-        self.disconnected.clear();return await self.command('dial',uri)
+        self.call_closed.clear();self.disconnected.clear();return await self.command('dial',uri)
     async def wait_registered(self, timeout=20):
         """Check provider registration without dialing or disclosing identities."""
         deadline=asyncio.get_running_loop().time()+timeout
@@ -187,8 +188,20 @@ video_display none
         if hasattr(self,'writer'):
             try: await self.command('hangup')
             except (OSError,RuntimeError,asyncio.TimeoutError): pass
+    async def hangup_and_wait(self, timeout=1.5):
+        if self.call_closed.is_set():
+            return True
+        if not hasattr(self, 'writer'):
+            return False
+        try:
+            await asyncio.wait_for(self.command('hangup'), timeout)
+            await asyncio.wait_for(self.call_closed.wait(), timeout)
+            return True
+        except (OSError, RuntimeError, asyncio.TimeoutError):
+            return self.call_closed.is_set()
+
     async def close(self):
-        await self.hangup()
+        await self.hangup_and_wait()
         if hasattr(self,'writer'):
             self.writer.close()
             try:await self.writer.wait_closed()

@@ -60,7 +60,11 @@ class Store:
     def pending(self):
         return [dict(x) for x in self.db.execute("SELECT * FROM questions WHERE status IN ('PENDING','WAITING','ORPHANED') ORDER BY created")]
     def set_question(self, qid, status, answer=None):
-        self.db.execute('UPDATE questions SET status=?,answer=? WHERE id=?', (status, answer, qid)); self.db.commit()
+        # A confirmed receipt survives cancellation/recovery after its ACK.
+        self.db.execute('''UPDATE questions SET status=?,answer=COALESCE(?,answer)
+                           WHERE id=? AND NOT (status='ANSWERED' AND ? IN
+                           ('ORPHANED','EXPIRED','WAITING','ENDED_NO_DECISION','COMPLETED'))''',
+                        (status, answer, qid, status)); self.db.commit()
     def new_call(self, qid):
         cid = str(uuid.uuid4())
         self.db.execute('INSERT INTO calls VALUES (?,?,?,?,NULL,NULL)', (cid,qid,'DIALING',time.time())); self.db.commit()

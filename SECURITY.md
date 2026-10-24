@@ -23,7 +23,8 @@ Codex sessions. This is experimental software, not a safety-critical approval sy
   Codex plan; the confirmed answer is sent to Codex and is not fully local.
 - Current production audio is recognized by Groq Whisper using the existing owner-only credential;
   dialogue goes through the loopback MAFFEO router (Groq/Cloudflare same-model routes),
-  and voice synthesis goes through existing LiveKit Fish.
+  and voice synthesis uses the explicitly selected LiveKit standard voice profile
+  (German Cartesia after the 2026-10-24 synthetic checks; Fish remains an explicit rollback).
   Only the open question and conversation are supplied, not an automatic repository upload.
   SDK recording/observability is disabled; this is not a blanket zero-retention guarantee.
   Credentials remain in the private LiveKit CLI store; local caps do not guarantee provider bills.

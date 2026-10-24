@@ -19,7 +19,8 @@ def call_readiness(cfg, bridge_state):
         sip_valid = bool(cfg.get('password')) and cfg['mac_uri'] != cfg['iphone_uri']
     except ValueError:
         sip_valid = False
-    checks = {'budget': budget['budget_allows_call'], 'bridge_idle': bridge_state == 'IDLE',
+    checks = {'synthesis_profile': voice.get('synthesis_profile', 'fish') in ('fish', 'cartesia-de'),
+              'budget': budget['budget_allows_call'], 'bridge_idle': bridge_state == 'IDLE',
               'sip_configuration': sip_valid, 'sip_binary': bool(shutil.which('baresip')),
               'voice_environment': (ROOT/'.local/voice-venv/bin/python').is_file(),
               'native_modules': all((ROOT/'.local/modules'/p).is_file() for p in ('phoneaudio.so','phonecontrol.so')),

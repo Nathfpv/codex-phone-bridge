@@ -73,6 +73,7 @@ async def main(args):
            "dialogue_backend": installed.get('dialogue_backend', 'livekit'),
            "recognition_backend": installed.get('recognition_backend', 'livekit'),
            "provider_plan_evidence": installed.get('provider_plan_evidence', {})}
+    cfg['cloud_voice']['synthesis_profile'] = args.synthesis_profile or installed.get('cloud_voice', {}).get('synthesis_profile', 'fish')
     drain_task = None
     mcp = None
     server = None
@@ -95,13 +96,19 @@ async def main(args):
                 stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
             async def invoke():
                 request={'jsonrpc':'2.0','id':42,'method':'tools/call',
-                         'params':{'name':'phone_decision','arguments':{'kind':'design','question':question}}}
+                         'params':({'name':'phone_call','arguments':{}} if args.open_hangup else
+                                   {'name':'phone_decision','arguments':{'kind':'design','question':question}})}
                 mcp.stdin.write(json.dumps(request).encode()+b'\n'); await mcp.stdin.drain()
                 response=json.loads(await mcp.stdout.readline())
                 assert response['id']==42, 'Response reached wrong invocation'
                 payload=json.loads(response['result']['content'][0]['text'])
+                if args.open_hangup:
+                    assert payload.get('completed') is True, 'No completed open call'
+                    assert 'decision' not in payload and 'confirmed' not in payload
+                    assert payload['metrics'].get('local_dialog_closed') is True, 'No observed SIP hangup'
+                    return None, payload['metrics']
                 assert payload.get('confirmed') is True, 'No confirmed MCP decision'
-                return payload['decision'], {}
+                return payload['decision'], payload.get('metrics', {})
             task=asyncio.create_task(invoke())
         else:
             await a.start()
@@ -118,25 +125,39 @@ async def main(args):
         drain_task = asyncio.create_task(drain())
         if not args.mcp:
             task = asyncio.create_task(converse(a, question, cfg, prepared=prepared))
-        await asyncio.sleep(12)
-        await say('Bitte vereinfache die mobile Navigation und lass Desktop unverändert.')
-        await asyncio.sleep(12)
-        for _ in range(3):
-            if task.done():
-                break
-            await say('Ja, wir schicken ab.')
-            await asyncio.sleep(7)
-        answer, metrics = await asyncio.wait_for(task, 30)
-        answer = answer.lower()
-        assert 'mobil' in answer and 'desktop' in answer, 'Decision content mismatch'
+        if args.open_hangup:
+            await asyncio.sleep(5)
+            await say('Moment.')
+            await asyncio.sleep(2)
+            held_audio = received
+            await asyncio.sleep(2)
+            assert not task.done(), 'Hold unexpectedly ended call'
+            assert received == held_audio, 'Assistant spoke during hold'
+            await say('Ich möchte das Gespräch beenden.')
+            answer, metrics = await asyncio.wait_for(task, 20)
+        else:
+            await asyncio.sleep(12)
+            await say('Bitte vereinfache die mobile Navigation und lass Desktop unverändert.')
+            await asyncio.sleep(12)
+            for _ in range(3):
+                if task.done():
+                    break
+                await say('Ja, wir schicken ab.')
+                await asyncio.sleep(7)
+            answer, metrics = await asyncio.wait_for(task, 30)
+            answer = answer.lower()
+            assert 'mobil' in answer and 'desktop' in answer, 'Decision content mismatch'
         assert received > 32000, 'No actual return RTP audio'
         if bridge:
             row=bridge.store.db.execute('SELECT status FROM questions').fetchone()
-            assert row[0]=='ANSWERED', 'Confirmed decision was not persisted'
+            assert row[0]==('COMPLETED' if args.open_hangup else 'ANSWERED'), 'Confirmed decision was not persisted'
+            if args.open_hangup:
+                assert bridge.store.db.execute('SELECT answer FROM questions').fetchone()[0] is None
             assert len(bridge.store.db.execute('SELECT id FROM calls').fetchall())==1, 'Duplicate call'
         print(json.dumps({'status': 'PASS', 'scope': 'real MCP + controller + local SIP/RTP + cloud' if args.mcp else 'synthetic caller, real local SIP/RTP and cloud',
                           'received_audio_bytes': received, 'metrics': metrics,
                           'first_audible_rtp_seconds': round(first_audible_at-connected_at, 3),
+                          'scenario': 'hold then end by request' if args.open_hangup else 'confirmed decision',
                           'iphone': 'NOT_TESTED'}))
     finally:
         for item in (task, drain_task):
@@ -166,6 +187,11 @@ if __name__ == '__main__':
     parser.add_argument('--project', required=True)
     parser.add_argument('--voice', default='fa4c9eb3dccc4806b382b40d61c6b10a')
     parser.add_argument('--use-free-allowance', required=True, action='store_true')
+    parser.add_argument('--open-hangup', action='store_true', help='Test OPEN hold then deterministic end; requires --mcp')
+    parser.add_argument('--synthesis-profile', choices=('fish','cartesia-de'))
     parser.add_argument('--mcp', action='store_true', help='Include a real stdio MCP client and controller; calls ONLY a synthetic loopback SIP peer')
     logging.basicConfig(level=logging.WARNING)
-    asyncio.run(main(parser.parse_args()))
+    args = parser.parse_args()
+    if args.open_hangup and not args.mcp:
+        parser.error('--open-hangup requires --mcp')
+    asyncio.run(main(args))

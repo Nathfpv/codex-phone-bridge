@@ -11,6 +11,8 @@ try:
     from livekit.plugins import openai
     from codex_phone.decision_agent import DecisionAgent
     from codex_phone.voice_decision import Decision
+    from codex_phone.call_control import CallController
+    from codex_phone.voice_session import attach_controller
     VOICE_SDK=True
 except ImportError:
     VOICE_SDK=False
@@ -18,7 +20,7 @@ except ImportError:
 
 @unittest.skipUnless(VOICE_SDK,'Requires the installed voice environment')
 class ProposalHandoff(unittest.IsolatedAsyncioTestCase):
-    async def exercise(self, message, *, existing_proposal=False):
+    async def exercise(self, message, *, existing_proposal=False, control=None):
         requests=[]
         async def serve(reader,writer):
             header=await reader.readuntil(b'\r\n\r\n')
@@ -65,6 +67,8 @@ class ProposalHandoff(unittest.IsolatedAsyncioTestCase):
             proposed.append(decision.propose(answer))
             return {'proposal':answer,'next':'Read back before a new confirmation.'}
         session=AgentSession(llm=model)
+        if control is not None:
+            attach_controller(session, control)
         try:
             agent=DecisionAgent(decision=decision,instructions='Besprich die Entscheidung.',tools=[propose_decision])
             await session.start(agent=agent,record=False)
@@ -73,17 +77,22 @@ class ProposalHandoff(unittest.IsolatedAsyncioTestCase):
         finally:
             await session.aclose();await model.aclose();server.close();await server.wait_closed()
 
-    async def test_clear_yes_forces_proposal_instead_of_another_chat_question(self):
-        requests,proposed,decision=await self.exercise('Ja, wir schicken ab.')
-        self.assertTrue(requests, 'Actual Chat Completions request must reach local fixture')
-        self.assertEqual(proposed,['Normales Hochdeutsch und kurze Antworten.'])
-        self.assertEqual(requests[0]['tool_choice'],
-                         {'type':'function','function':{'name':'propose_decision'}})
-        # Tool output continuation must not force another proposal recursively.
-        self.assertNotEqual(requests[-1].get('tool_choice'),requests[0]['tool_choice'])
+    async def test_clear_yes_does_not_force_a_proposal_without_context(self):
+        requests, proposed, decision = await self.exercise('Ja, wir schicken ab.')
+        self.assertTrue(requests)
+        self.assertFalse(proposed)
+        self.assertNotEqual(requests[0].get('tool_choice'),
+                            {'type':'function','function':{'name':'propose_decision'}})
         self.assertIsNone(decision.read_back_at)
-        decision.heard('Ja')
-        with self.assertRaises(ValueError):decision.confirm()
+
+    async def test_new_generated_speech_invalidates_late_readback_callback(self):
+        control = CallController()
+        control.decision.propose('Old')
+        version = control.decision.version
+        await self.exercise('A different question', control=control)
+        self.assertFalse(control.decision.read_back(version, ended_at=1.))
+        control.speech_started(); control.user_turn('new', 'Ja')
+        control.tick(); self.assertIsNone(control.outcome)
 
     async def test_qualified_yes_or_question_does_not_force_a_proposal(self):
         for message in ('Ja, aber Desktop auch ändern.', 'Ja?', 'Nein, bitte noch warten.'):

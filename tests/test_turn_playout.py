@@ -14,6 +14,7 @@ try:
     from livekit.agents import Agent, AgentSession, stt, vad
     from livekit.agents.voice import io
     from codex_phone.cloud_voice import SipOutput
+    from codex_phone.voice_session import build_session
     VOICE_SDK = True
 except ImportError:
     VOICE_SDK = False
@@ -81,10 +82,7 @@ class TurnPlayout(unittest.IsolatedAsyncioTestCase):
             output = SipOutput(sender, str(Path(directory) / 'pcm'),
                                diagnostic=lambda *args: output_events.append(args[0]))
             detector = ControlledVAD()
-            session = AgentSession(vad=detector, stt=BatchSTT(transcript), aec_warmup_duration=None,
-                turn_detection='vad', min_endpointing_delay=.05,
-                min_interruption_duration=.1, min_interruption_words=0,
-                false_interruption_timeout=.1, resume_false_interruption=True)
+            session = build_session(vad=detector, stt=BatchSTT(transcript))
             session.input.audio = WaitingInput()
             session.output.audio = output
             false_events = []

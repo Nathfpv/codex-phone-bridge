@@ -76,10 +76,12 @@ async def tool(name, arguments):
             return {'confirmed':False,'status':result.get('status','FAILED'),
                     'reason':result.get('reason','No confirmed answer'),
                     'instruction':'Decision remains unresolved. Do not guess or retry automatically.'}
-        return {'confirmed':True,'decision':result['decision'],'source':'confirmed_cloud_sip_speech'}
+        return {'confirmed':True,'decision':result['decision'],'source':'confirmed_cloud_sip_speech',
+                'metrics':result.get('metrics', {})}
     if name=='phone_status' and not arguments:
         result=await daemon({'op':'status'})
-        return {'bridge':result['call_state'], **call_readiness(config(), result['call_state'])}
+        return {'bridge':result['call_state'], 'voice_protocol':result.get('voice_protocol'),
+                **call_readiness(config(), result['call_state'])}
     raise ValueError('Unknown tool or invalid arguments')
 
 async def serve():

@@ -5,6 +5,7 @@ from .cloud_audio import converse,prepare_voice
 from .sip import Sip
 from .storage import Store,config,home
 from .codex import Codex
+from .worker_protocol import VERSION
 
 class Bridge:
     def __init__(self):
@@ -91,7 +92,18 @@ class Bridge:
                 transition('CONNECTED')
                 prepared.options['connected_at']=time.monotonic()
                 transition('LISTENING')
-                answer,metrics=await converse(sip,q['question'],cfg,prepared=prepared)
+                persisted = False
+                async def persist_outcome(answer):
+                    nonlocal persisted
+                    if answer is None or q.get('conversation'):
+                        return
+                    # Durable receipt first; a later disconnect cannot erase it.
+                    self.store.set_question(q['id'], 'ANSWERED', answer)
+                    persisted = True
+                    if not manual and not external:
+                        await self.deliver(q['id'], answer, source='confirmed_cloud_sip_speech')
+                answer,metrics=await converse(sip,q['question'],cfg,prepared=prepared,
+                                              on_outcome=persist_outcome)
                 self.log('voice_metrics',call=cid,**{k:v for k,v in metrics.items()
                          if k in ('conversation_seconds','user_turns','output_samples','pcm_start_delay_seconds',
                                   'session_start_seconds','media_ready_delay_seconds',
@@ -101,9 +113,22 @@ class Bridge:
                     self.store.set_question(q['id'],'COMPLETED')
                     transition('ENDING')
                     return {'completed':True,'status':'ENDED','call_id':cid,'metrics':metrics}
-                if manual:self.store.set_question(q['id'],'TEST_COMPLETED')
-                elif external:self.store.set_question(q['id'],'ANSWERED',answer)
-                else:await self.deliver(q['id'],answer,source='confirmed_cloud_sip_speech')
+                if answer is None:
+                    self.store.set_question(q['id'], 'ENDED_NO_DECISION')
+                    entry = self.questions.get(q['id'])
+                    if not external and not manual and entry and entry['live'] and not entry['delivered']:
+                        await self.codex.send({'id': entry['rpc_id'], 'result': {
+                            'contentItems': [{'type': 'inputText', 'text': json.dumps({
+                                'decision': None, 'status': 'ended_no_decision',
+                                'instruction': 'Do not automatically call again'})}], 'success': False}})
+                        entry['delivered'] = True
+                        entry['live'] = False
+                    transition('ENDING')
+                    return {'status': 'ENDED_NO_DECISION', 'confirmed': False,
+                            'call_id': cid, 'metrics': metrics}
+                if manual:self.store.set_question(q['id'],'TEST_COMPLETED',answer)
+                elif not persisted:
+                    await persist_outcome(answer)
                 transition('ENDING');return dict(status='ENDING',metrics=metrics,call_id=cid,
                                                        **({'decision':answer,'confirmed':True} if external else {}))
             except asyncio.CancelledError:
@@ -117,14 +142,14 @@ class Bridge:
                 self.log('call_failed',call=cid,error=type(exc).__name__)
                 return {'status':'FAILED','reason':str(exc) if isinstance(exc,(RuntimeError,ValueError)) else type(exc).__name__,'call_id':cid}
             finally:
-                if prepared:await prepared.close()
                 if sip:await sip.close()
+                if prepared:await prepared.close()
     async def command(self,msg):
         op=msg.get('op')
         if op=='status':
             calls=[dict(row) for row in self.store.db.execute('SELECT id,question_id,status,started,ended,error FROM calls ORDER BY started DESC LIMIT 10')]
             active=next((c['status'] for c in calls if c['ended'] is None),'IDLE')
-            return {'call_state':active,'calls':calls,'questions':[{'id':q['id'],'status':q['status'],'session_id':q['session_id'],'turn_id':q['turn_id']} for q in self.store.pending()], 'turns':self.turns,'approvals':[{'id':k,'method':v['method']} for k,v in self.approvals.items()]}
+            return {'voice_protocol':VERSION,'call_state':active,'calls':calls,'questions':[{'id':q['id'],'status':q['status'],'session_id':q['session_id'],'turn_id':q['turn_id']} for q in self.store.pending()], 'turns':self.turns,'approvals':[{'id':k,'method':v['method']} for k,v in self.approvals.items()]}
         if op=='launch':
             result=await self.codex.launch(msg['cwd'],msg['prompt'])
             self.store.db.execute('INSERT INTO sessions VALUES (?,?)',(result['thread_id'],msg['cwd']));self.store.db.commit()
@@ -164,7 +189,7 @@ class Bridge:
             try:
                 result=await self.call(q,external=True)
                 if conversation and result.get('completed') is True:self.store.set_question(q['id'],'COMPLETED')
-                elif result.get('confirmed') is not True:self.store.set_question(q['id'],'ORPHANED')
+                elif result.get('confirmed') is not True and result.get('status') != 'ENDED_NO_DECISION':self.store.set_question(q['id'],'ORPHANED')
                 return result
             except asyncio.CancelledError:
                 self.store.set_question(q['id'],'ORPHANED')

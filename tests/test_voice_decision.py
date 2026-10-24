@@ -90,6 +90,22 @@ class SpokenDecisionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             d.propose('x' * 2001)
 
+    def test_correction_then_yes_cannot_revive_old_proposal(self):
+        d = Decision(); d.propose('X'); d.read_back()
+        d.heard('Nein, eher Y'); d.heard('Ja')
+        with self.assertRaises(ValueError): d.confirm()
+
+    def test_incomplete_positive_phrases_never_confirm(self):
+        for text in ('Okay, ich', 'Ja ich', 'Stimmt das', 'Ja ja', 'okay'):
+            with self.subTest(text=text):
+                self.assertFalse(Decision.is_confirmation(text))
+
+    def test_old_readback_cannot_authorize_new_proposal(self):
+        d = Decision(); d.propose('X'); old = d.version
+        d.propose('Y'); d.read_back(old)
+        d.heard('Ja')
+        with self.assertRaises(ValueError): d.confirm()
+
     def test_free_use_reservation_survives_reopening(self):
         with tempfile.TemporaryDirectory() as directory:
             from unittest.mock import patch
