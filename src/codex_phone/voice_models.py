@@ -42,3 +42,21 @@ def dialogue_model(options, *, base_url=MAFFEO_URL):
     return openai.LLM(model='gpt-oss-120b', base_url=base_url, api_key='local-loopback',
                       max_completion_tokens=512, reasoning_effort='low',
                       max_retries=0, parallel_tool_calls=False)
+
+
+# Standard German voice from the provider integration catalog, verified by an
+# actual LiveKit synthesis before activation. No custom voice or new account.
+GERMAN_VOICE = '3f4ade23-6eb4-4279-ab05-6a144947c4d5'
+
+
+def synthesis_model(options, http):
+    from livekit.agents import inference
+    profile = options.get('synthesis_profile', 'fish')
+    if profile == 'fish':
+        model, voice = 'fishaudio/s2.1-pro', options['voice_id']
+    elif profile == 'cartesia-de':
+        model, voice = 'cartesia/sonic-3', GERMAN_VOICE
+    else:
+        raise ValueError('Unknown synthesis profile')
+    return inference.TTS(model=model, voice=voice, language='de',
+                         sample_rate=16000, http_session=http)

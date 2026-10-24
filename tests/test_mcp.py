@@ -233,7 +233,7 @@ class FreeCallTests(unittest.IsolatedAsyncioTestCase):
             sip.close.assert_awaited_once();prepared.close.assert_awaited_once()
             bridge.store.db.close()
 
-    async def test_only_free_mode_accepts_connected_disconnect_as_completion(self):
+    async def test_disconnect_returns_nondecision_outcome_in_both_modes(self):
         from types import SimpleNamespace
         from codex_phone.cloud_audio import converse
         async def never():await asyncio.Future()
@@ -245,12 +245,9 @@ class FreeCallTests(unittest.IsolatedAsyncioTestCase):
                 proc=SimpleNamespace(stdin=SimpleNamespace(write=lambda x:None,drain=AsyncMock(),close=lambda:None),
                                      stdout=SimpleNamespace(readline=never))
                 prepared=SimpleNamespace(proc=proc,options={'seconds':1,'conversation':free},close=AsyncMock())
-                if free:
-                    answer,metrics=await converse(sip,'',{},prepared)
-                    self.assertIsNone(answer);self.assertTrue(metrics['ended_by_disconnect'])
-                else:
-                    with self.assertRaisesRegex(RuntimeError,'disconnected'):
-                        await converse(sip,'',{},prepared)
+                answer,metrics=await converse(sip,'',{},prepared)
+                self.assertIsNone(answer)
+                self.assertEqual(metrics['outcome'], 'peer_closed')
                 prepared.close.assert_awaited_once()
 
     async def test_registration_preserves_existing_nested_tool_tables(self):
